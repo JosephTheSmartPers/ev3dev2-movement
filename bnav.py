@@ -1,5 +1,5 @@
-import math
-import time
+from math import sin, cos, degrees, atan2, radians
+from time import time, sleep
 from ev3dev2.sensor.lego import * 
 from ev3dev2.sensor import *
 from ev3dev2.motor import LargeMotor, OUTPUT_B, OUTPUT_C, MoveTank, MoveSteering
@@ -14,6 +14,11 @@ gs = GyroSensor(INPUT_2)
 
 rightSensor = ColorSensor("in3")
 leftSensor = ColorSensor("in4")
+
+gyroOffset = 0.99174
+
+def gsAngle():
+    return gs.angle * gyroOffset
 
 def findBigger(num1, num2):
     """Subtracts the smallest number from all numbers in a vector and returns it."""
@@ -32,17 +37,29 @@ def sign(num):
         return 1
     return(num / abs(num))
 
+def shortest_angle(angle, target_angle):
+    # Calculate the absolute difference between the angles
+    diff = target_angle - angle
+    
+    # Check if the difference is more than 180 degrees
+    if abs(diff) > 180:
+        # Recalculate the target angle with the shortest path
+        target_angle -= 360
+        target_angle *= sign(diff) 
+            
+    return target_angle
+
 currentX = 0
 currentY = 0
 
 
-def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distance):
+def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distance, shouldSpeedUp):
     """This function calculates the speed, for linearly speeding up and slowing down."""
 
     deltaDistance = abs(abs(currentDistance) - startDistance)
     #? Calculates how close the robot is to the target
 
-    if(deltaDistance < speedUp):
+    if(deltaDistance < speedUp and shouldSpeedUp == True):
             #* Ha a kezdet óta a fordulatok száma még kisebb annál a cél-fordulat számnál amit megadtunk, akkor tovább gyorsul
             return (deltaDistance / speedUp * (maxSpeed - minSpeed)) + minSpeed
             #~   [              0 és 1 közötti szám           ]   maximum elérhető érték (nem számítjuk a minimum sebességet) + alap sebesség
@@ -91,7 +108,7 @@ def raall(KP, maxIdo, maxSebesseg, minimumFeny):
         #*
 
 
-def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine = False, goOnLine = False, motorStop = False, shouldSpeedUp = True, shouldSlowDown = True, drift = 0, margin = 0, calibrate = False, debug = False):
+def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine = False, goOnLine = False, motorStop = False, shouldSpeedUp = True, shouldSlowDown = True, drift = 0, correctMargin = 0, calibrate = False, speedingUp = False, slowingDown = False, debug = False):
     #Make the robot go staright in a specified degree (cm)
 
     startRotations = getRotations()
@@ -99,16 +116,18 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
     previousAngle = 0
     timesBad = 0
     status = "Starting"
-    speedingUp = distance * 0.5 * (abs(maxSpeed - minSpeed) / 99)
-    slowingDown = distance * 0.6
+
+    if(speedingUp == False):
+        speedingUp = distance * 0.5 * (abs(maxSpeed - minSpeed) / 99)
+        if(speedingUp > (2 * wheelDiameter)):
+            speedingUp = (2 * wheelDiameter)
+    if(slowingDown == False):
+        slowingDown = distance * 0.6
+        if(slowingDown > (2*wheelDiameter)):
+            slowingDown = (2 * wheelDiameter)
+
     direction = sign(maxSpeed)
     minSpeed *= direction
-
-    if(speedingUp > (2 * wheelDiameter)):
-        speedingUp = (2 * wheelDiameter)
-    if(slowingDown > (2*wheelDiameter)):
-        slowingDown = (2 * wheelDiameter)
-
 
     m.on(minSpeed, minSpeed)
     while abs(getRotations() - startRotations) <= distance:
@@ -121,7 +140,7 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
                 m.stop(None, False)
                 break
              
-        calculatedSpeed = calculateSpeed(getRotations(), startRotations, speedingUp, slowingDown, maxSpeed, minSpeed, motorStop, shouldSlowDown, distance)
+        calculatedSpeed = calculateSpeed(getRotations(), startRotations, speedingUp, slowingDown, maxSpeed, minSpeed, motorStop, shouldSlowDown, distance, shouldSpeedUp = shouldSpeedUp)
 
         #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
 
@@ -138,8 +157,8 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
         calculatedSensitivity = sensitivity / sensitivityMultiplier
         
 
-        if(abs(gs.angle - targetAngle) > 0):
-            calculatedAngle = ((gs.angle) - targetAngle + drift) * calculatedSensitivity 
+        if(abs(gsAngle() - targetAngle) > 0):
+            calculatedAngle = ((gsAngle()) - targetAngle + drift) * calculatedSensitivity 
             #~     gyro célérték     jelenlegi gyro érték * érzékenység
 
             calculatedAngle *= direction
@@ -148,7 +167,7 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
             if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
             #* Ne tudjon a maximumnál nagyobb értékkel fordulni
 
-            """if(gs.angle == irany):
+            """if(gsAngle() == irany):
                 pontos += 1
             osszesMeres += 1"""
             #* Pontosságot számolja
@@ -159,7 +178,7 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
             timesBad += 1
             timesGood = 0
         else:
-            if(timesBad + margin != timesGood):
+            if(timesBad + correctMargin != timesGood):
                 s.on((-previousAngle * direction), calculatedSpeed)
             else:
                 s.on((drift * direction), calculatedSpeed)
@@ -177,7 +196,7 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
         rightm.reset()
         return (newWheelDiameter)
 
-def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp =0.3, slowDown = 0.8, debug = False, motorStop = False, shouldSlow = True, curve = False):
+def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp =0.3, slowDown = 0.8, debug = False, motorStop = False, shouldSlow = True, shouldSpeed = True, curve = False):
     global currentX
     global currentY
     global rotations
@@ -186,62 +205,75 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
     distance = (abs(abs(targetX) - abs(currentX))) + abs((abs(targetY) - abs(currentY)))
 
     startDistance = distance
+    startGsAngle = gsAngle()
 
     speedUp *= startDistance
     slowDown *= startDistance
 
-
-
-
+    startX = currentX
+    startY = currentY
 
     if(curve == True):
-        coordinates = findBigger((targetX - currentX), (targetY - currentY))
-        curveX = coordinates[0] * sign((targetX - currentX))
-        curveY = coordinates[1] * sign((targetY - currentY))
-        curveTargetAngle = math.degrees(math.atan2(curveX, curveY))
-        startCurveDistance = abs(abs(abs(abs(targetX) - abs(curveX)) - abs(currentX)) + abs(abs(abs(targetY) - abs(curveY)) - abs(currentY)))
-    #! KISZÁMÍT IRÁNY AMIBE KEVESEBBET KELL MENNI, TARGET IRÁNY = MIUTÁN ELÉRTED A KISEBB IRÁNYBÓL A CÉL ÉRTÉKET MILYEN SZÖGBEN KELL MENN
-    #! TARGET IRÁNY = AMEDDIG AZ EGYIK IRÁNY EL NEM ÉRI DECIMALBA ÁTVÁLTVA, SZOROZVA, 
+        coordinates = findBigger(abs(targetX - currentX), abs(targetY - currentY))
+        curveX = -(coordinates[0] * sign(targetX - currentX))
+        curveY = -(coordinates[1] * sign(targetY - currentY))
+        curveTargetAngle = -abs(-gsAngle()-((degrees(atan2((targetX - (targetX - curveX)), (targetY - (targetY -curveY))))))) 
+        print("Curve target: " + str(curveTargetAngle))
 
     while abs(abs(targetX) - abs(currentX)) > margin or abs(abs(targetY) - abs(currentY)) > margin:
         status = "Starting"
 
-        
-
         distance = (abs(abs(targetX) - abs(currentX))) + abs((abs(targetY) - abs(currentY)))
 
-        currentX += (math.sin(math.radians(gs.angle)) * ((getRotations() - rotations))) * -1
-        currentY += math.cos(math.radians(gs.angle)) * ((getRotations() - rotations))
+        currentX += (sin(radians(gsAngle())) * ((getRotations() - rotations))) * -1
+        currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
         rotations = getRotations()
 
         if(curve == True):
-            distanceDecimal = 1- (abs(abs(abs(abs(targetX) - abs(curveX)) - abs(currentX)) + abs(abs(abs(targetY) - abs(curveY)) - abs(currentY))) / startCurveDistance)
+            if(curveY == 0):
+                distanceDecimal = abs(1- abs((targetY - currentY) / (targetY - startY)))
+                print("TargetY: " + str(targetY) + "\tCurrentY: " + str(currentY))
+            if(curveX == 0):
+                distanceDecimal = abs(1 - abs((targetX - currentX) / (targetX - startX)))
+                print("TargetX: " + str(targetX) + "\tCurrentX: " + str(currentX))
+                  
+            #distanceDecimal = 1- (abs(abs(abs(abs(targetX) - abs(curveX)) - abs(currentX)) + abs(abs(abs(targetY) - abs(curveY)) - abs(currentY))) / startCurveDistance)
+            print("Decimal: " + str(distanceDecimal))
             targetAngle = curveTargetAngle * distanceDecimal
         else:
-            targetAngle = math.degrees(math.atan2(targetX - currentX, targetY - currentY))
+            targetAngle = degrees(atan2(targetX - currentX, targetY - currentY))
 
-        if (abs((gs.angle * -1) - targetAngle) > 180):
-            targetAngle = 360 - abs(targetAngle)
+        targetAngle += startGsAngle
 
-        calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance)
+        print("Target angle: " + str(targetAngle))
+
+        
+
+        targetAngle = shortest_angle(gsAngle(), targetAngle)
+
+        calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance, shouldSpeedUp = shouldSpeed)
 
         #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = (abs(calculatedSpeed) / calculatedSpeed) * abs(maxSpeed)
         #* Ne tudjon véletlenül sem a maximum sebességnél gyorsabban menni
 
-        calculatedAngle = ((gs.angle) + targetAngle) * sensitvity
+        print("Equation: " + str(gsAngle()) + "+" + str(targetAngle))
 
-        print("Target: " + str(targetAngle) + "\tCalculated: " + str(calculatedAngle) + "\tCurrent: " + str(gs.angle))
+        calculatedAngle = ((gsAngle()) - targetAngle) * sensitvity
+        print("Calculated angle: " + str(calculatedAngle) +" \n")
+
 
         if(debug == True):
             print("----------------------------")
             print("X: "+str(round(currentX, 2)) + "\tY: " + str(round(currentY, 2)))
             print("targetX: "+str(targetX) + "\ttargetY: " + str(targetY))
-            print("Current Angle: " + str(gs.angle) + "\tTarget Angle: " + str(round(targetAngle, 2)))
+            print("Current Angle: " + str(gsAngle()) + "\tTarget Angle: " + str(round(targetAngle, 2)))
             print("Left speed: " + str(leftm.speed) + "\tRight speed: " + str(rightm.speed))
             #print("slowDwon: "+str(slowDown) + "\tspeedUp: "+str(speedUp))
             #print("Predicted Distance: " + str(distance) + "\tStart Distance: " + str(startDistance))
             #print("Status: " + status)
+            print("Target: " + str(targetAngle) + "\tCalculated: " + str(calculatedAngle) + "\tCurrent: " + str(gsAngle()))
+
         
         
         #~     gyro célérték     jelenlegi gyro érték * érzékenység
@@ -252,8 +284,11 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
 
         if(abs(calculatedAngle) > 100): calculatedAngle = (abs(calculatedAngle) / calculatedAngle) * 100
         s.on(calculatedAngle, calculatedSpeed)
-        time.sleep(0.01)
-    m.stop()
+        sleep(0.01)
+    if(motorStop == False):
+        m.stop()
+    else:
+        m.on(motorStop, motorStop)
 
     print("__________")
     print("D__O__N__E")
@@ -267,12 +302,17 @@ def calibrate():
     wheelDiameter = 1
     wheelDiameter = straight(10, 35, 0, 1.15, 5, False, False, False, True, True, -1, 0, calibrate=float(dist))
 
-    time.sleep(0.1)
+    sleep(0.1)
     straight(float(dist) + 2, -50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
 
 
 
     print(wheelDiameter)
+#calibrate()
+
+wheelDiameter = float(wheelDiameter)
+
+#straight(100, 50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
 rotations = getRotations()
 input("Start? ")
 
@@ -282,10 +322,10 @@ gs.reset()
 leftm.reset()
 rightm.reset()
 try:
-    gotoXY(170, 80, 50.00, 5.00, 0.8, 4, 0.30, 0.7, curve=True)
-    gotoXY(170, 80, 50.00, 5.00, 0.8, 4, 0.30, 0.7, curve=True)
-    gotoXY(170, 35, 50.00, 5.00, 0.8, 4, 0.30, 0.7, curve=True)
-    gotoXY(37, 20.5, 50.00, 5.00, 0.8, 2, 0.30, 0.7, curve=True)
+    gotoXY(120, 90, 50.00, 5.00, 0.8, 4, 0.30, 0.7, curve=True, debug=False, motorStop=50)
+    gotoXY(150, 55, 50.00, 5.00, 1, 4, 0.30, 0.7, curve=True, debug=False, shouldSpeed= False, motorStop=50)
+    gotoXY(37.5, 40.5, 50.00, 5.00, 0.8, 2, 0.30, 0.7, curve=True, debug=False, shouldSpeed= False)
+    bestSong = "https://youtube.com/shorts/MS2ZXbbZp3o?feature=share"
     #gotoXY(40, 40, 20, 5.00, 0.8, 1.5, 0.30, 0.7, True)
 
 except KeyboardInterrupt:
