@@ -2,7 +2,6 @@ from ev3dev2.motor import MoveTank, LargeMotor, MoveSteering
 from ev3dev2.sensor.lego import GyroSensor, ColorSensor
 from time import time
 #? Mindent beimportálunk
-
 wheelDiameter = 1
 leftm = LargeMotor("outB")
 rightm = LargeMotor("outC")
@@ -18,7 +17,6 @@ def sign(num):
     if(num == 0):
         return 1
     return(num / abs(num))
-
 def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distance):
     """This function calculates the speed, for linearly speeding up and slowing down."""
 
@@ -39,7 +37,6 @@ def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, 
 
     else:
         return maxSpeed
-
 def raallSzog(motor, szinSzenzor, minFeny, maxSebesseg, KP):
     sebesseg = (minFeny - szinSzenzor.reflected_light_intensity) * KP
     #& Egyik oldali motor sebességének kiszámolása, egy célérték (minLight) és egy érzékenység (KP) alapján
@@ -53,7 +50,6 @@ def raallSzog(motor, szinSzenzor, minFeny, maxSebesseg, KP):
 
     return sebesseg
     #* Visszaadja a sebességet, hogy meg lehesen nézni hogy, 0, és mindkét motornak 0 lett a sebessége, akkor leáll a program.
-
 def raall(KP, maxIdo, maxSebesseg, minimumFeny):
     elozoIdo = time()
     #? Vonalra állás kezdetének időpotját lementi
@@ -72,10 +68,8 @@ def raall(KP, maxIdo, maxSebesseg, minimumFeny):
             m.stop(None, False)
             break
         #*
-
 def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine = False, goOnLine = False, motorStop = False, shouldSlowDown = True, drift = 0, margin = 0, calibrate = False, debug = False):
     """Make the robot go staright in a specified degree (cm)"""
-
     startRotations = getRotations()
     timesGood = 0
     previousAngle = 0
@@ -85,13 +79,10 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
     slowingDown = distance * 0.6
     direction = sign(maxSpeed)
     minSpeed *= direction
-
     if(speedingUp > (2 * wheelDiameter)):
         speedingUp = (2 * wheelDiameter)
     if(slowingDown > (2*wheelDiameter)):
         slowingDown = (2 * wheelDiameter)
-
-
     m.on(minSpeed, minSpeed)
     while abs(getRotations() - startRotations) <= distance:
         if(stopOnLine == True or calibrate != False):
@@ -104,38 +95,26 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
                 break
              
         calculatedSpeed = calculateSpeed(getRotations(), startRotations, speedingUp, slowingDown, maxSpeed, minSpeed, motorStop, shouldSlowDown, distance)
-
-
         #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
-
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = sign(calculatedSpeed) * abs(maxSpeed)
         #* Ne tudjon véletlenül sem a maximum sebességnél gyorsabban menni
-
         sensitivityMultiplier = (calculatedSpeed / (maxSpeed - minSpeed)) * 2
-
         if(sensitivityMultiplier > 2):
             sensitivityMultiplier = 2
         if(sensitivityMultiplier < 0.5):
             sensitivityMultiplier = 0.5
-
         calculatedSensitivity = sensitivity / sensitivityMultiplier
-        
-
         if(abs(gs.angle - targetAngle) > 0):
             calculatedAngle = ((gs.angle) - targetAngle + drift) * calculatedSensitivity 
             #~     gyro célérték     jelenlegi gyro érték * érzékenység
-
             calculatedAngle *= direction
             #* Ne forduljon meg a robot hátra menésnél
-
             if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
             #* Ne tudjon a maximumnál nagyobb értékkel fordulni
-
             """if(gs.angle == irany):
                 pontos += 1
             osszesMeres += 1"""
             #* Pontosságot számolja
-
             s.on(calculatedAngle, calculatedSpeed)
             #* Elindítja a motort a kiszámolt sebességel és szögben.
             previousAngle = calculatedAngle
@@ -160,134 +139,39 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
         rightm.reset()
         return (newWheelDiameter)
     #* Ha így bekapcsolva marad a 
-
-def fordul(szog, maxSebesseg, sensitivity, koIdo, hibahatar = 2, idotullepes = 2, relativ = True, motorLe = False, waitMargin = 2, stopAfter = 1, debug = False, minSpeed = 2):
-    """Makes the motor turn in a specified degree"""
-
-    kezdoIdo = time()
-    #? Fordulás kezdetének időpontja
-
-    elozoIdo = 999999999999
-    elteltIdo = time() - elozoIdo
-    timesCorrect = 0
-
-    hasStopped = False
-    hasRecalculated = False
-    #? Now nagy szám, mivel kivonjuk a mostani időből, mivel ezt nézi az egyik programrész
-
-    szog = szog * -1
+def fordul2(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2):
+    angle = angle * -1
     #? Így megy a jó irányba, gyro meg van fordítva
-
     fordulatszam = 0
-    if(relativ == True):
+    hasStopped = False
+    if(relative == True):
         fordulatszam = gs.angle
-
-    prevTime = time()
-    deltaTime = 0.1
-    prevDegree = gs.angle
-    deltaDegree = 1
-    #* 0-hoz képest vagy a gyrohoz képest forduljon el adott szögben
-    
-    while gs.angle != fordulatszam - szog or timesCorrect <= waitMargin :
-
-        if(gs.angle == fordulatszam - szog):
-            timesCorrect += 1
-        elif(timesCorrect != 0):
-            timesCorrect = 0 
-
-        deltaTime = prevTime - time()
-        prevTime = time()
-
-        estimatedTurn = deltaTime * deltaDegree * 7.5
-        estimatedTurn += sign(estimatedTurn) 
-        #? Using Runge Kuta 4 to aproximate the amount the robot will turn in the next cycle and stopping the motors if it might turn too much
-        
-        """if(sign((fordulatszam - szog) - gs.angle) != sign((fordulatszam - szog) - (gs.angle + round(float(estimatedTurn)))) and hasRecalculated == False):
-            newSpeed = (prevSpeed / (deltaDegree + (sign(deltaDegree) * 0.1))) * ((fordulatszam - szog) - gs.angle) 
-            newSpeed += sign(newSpeed)
-            if(abs(newSpeed) > 100): sign(newSpeed) * 100
-            newSpeed *= 0.1
-            m.on(-newSpeed, newSpeed)
-            hasRecalculated = True
-            print("alert")
-            continue"""
-
-        if(sign((fordulatszam - szog) - gs.angle) != sign((fordulatszam - szog) - (gs.angle + round(float(estimatedTurn)))) and hasStopped == False):
+    turnConstant = (fordulatszam-angle)
+    stopMargin *= sign(turnConstant)
+    while gs.angle != fordulatszam - angle:
+        if(turnConstant - stopMargin <= gs.angle <= turnConstant + stopMargin and hasStopped == False and stopMargin != 0):
             hasStopped = True
             m.stop()
-
-        if(gs.angle + stopAfter > (fordulatszam-szog) and (fordulatszam-szog) > gs.angle - stopAfter and hasStopped == False and stopAfter != 0):
-            hasStopped = True
-            m.stop()
+            print(str(turnConstant - stopMargin) + " | " + str(gs.angle))
             continue
-            
-
-        if(kezdoIdo + idotullepes <= time()):
-            break
-        #* Ha túl sokáig csinálja a fordulást akkor abbahagyja, mert lehet, hogy be van akadva
-
-        elteltIdo = time() - elozoIdo
-        #* Ez egy nagy számmal negatív lesz, ha viszont az előzőidő valóban az előző idő akkor megkapod 
-        #* a két számolás közti különbséget, és ezt hozzáadjuk a változóhoz
-
-        if(((fordulatszam - szog) - hibahatar <= gs.angle <= (fordulatszam - szog)  + hibahatar) and elozoIdo > time()):
-            elozoIdo = time()
-        #* Ha már közel van a giroszkóp a célértékhez, akkor elkezdi mérni az időt
-
-        if(elteltIdo >= koIdo):
-            m.stop()
-            break
-        #* Ha a robot már közel van a cél szöghöz, akkor lesz még egy adott ideje, hogy kisebbet korigáljon, aztán abbahagyja
-
-        #linearPlease = (fordulatszam - szog) * 1.5
-        #calculatedSpeed = abs(linearPlease - gs.angle) * sensitivity
-
-        calculatedSpeed = ((fordulatszam - szog) - gs.angle) * sensitivity
-        deltaDegree = prevDegree - gs.angle
-        prevDegree = gs.angle
-        prevSpeed = calculatedSpeed
-        #* Kiszámolja a sebességet, ami egyre lassul minnél közelebb vagy a cél giroszkóp értékhez
-
-
-        if(abs(calculatedSpeed) > abs(maxSebesseg)): calculatedSpeed = (abs(maxSebesseg) * sign(calculatedSpeed))
-
-        if(sign(fordulatszam - szog) != sign((fordulatszam - szog) -gs.angle)):
-            if(abs(calculatedSpeed) < abs(minSpeed)): 
-                calculatedSpeed = abs(minSpeed) * sign(calculatedSpeed)
-
-        #* Ne lépje túl megadott felső sebességkorlátot 
-
-        if(debug == True):
-            print("Current Angle: " + str(gs.angle) + "\tTarget angle: " + str(fordulatszam-szog))
-
+        calculatedSpeed = (turnConstant - gs.angle) * sensitvity
+        if(calculatedSpeed > maxSpeed / 3.5):
+            calculatedSpeed = maxSpeed
+        if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = (abs(maxSpeed) * sign(calculatedSpeed))
         m.on(-calculatedSpeed, calculatedSpeed)
-       
-        #* Elindítja a motorokat a forduláshoz ellenkező irányokba.
-
-
-    if(motorLe != False):
-        m.on(motorLe, motorLe)
-    else:
-        m.stop()
+        
+    m.stop()
     print("\nDONE\n")
-    
-    
-
-
-    #print("Kész a fordulás, célértéktől való eltérés: " + str(round(float(abs((((gs.angle / szog) * 100) - 100))), 2)) + "%")
-
 drift = -2
 gs.reset()
-
 straight(1, 35, 0, 1.2, 5, False, False, False, True, True, -2, 0)
-
-
-
-fordul(90, 60, 0.48, 0.5, idotullepes=3, relativ=False, stopAfter=3, waitMargin=1, debug=False, minSpeed=4)
+fordul2(90, 70, 0.3, False, 12)
+#fordul(90, 80, 0.3, 0.5, hibahatar=2, idotullepes=3, relativ=False, stopAfter=50, waitMargin=1, debug=False, minSpeed=3)
 print(gs.angle)
-fordul(-90, 60, 0.58, 0.5, idotullepes=3, relativ=False, stopAfter=0, waitMargin=1, debug=False, minSpeed=1.5)
+fordul2(-90, 70, 0.5, False, 8)
+#fordul(-90, 80, 0.55, 0.5, idotullepes=3, relativ=False, stopAfter=10, waitMargin=1, debug=False, minSpeed=3)
 print(gs.angle)
-fordul(1, 60, 0.48, 0.5, idotullepes=2, relativ=False, stopAfter=3, waitMargin=1, debug=False, minSpeed=3)
+fordul2(1, 70, 0.3, False, 14)
+#fordul(1, 80, 0.3, 0.5, idotullepes=2, relativ=False, stopAfter=45, waitMargin=1, debug=False, minSpeed=3)
 print(gs.angle)
-
 straight(1, -35, 0, 1.2, 5, False, False, False, True, True, -2, 0)
