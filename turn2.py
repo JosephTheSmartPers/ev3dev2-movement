@@ -2,7 +2,6 @@ from ev3dev2.motor import MoveTank, LargeMotor, MoveSteering
 from ev3dev2.sensor.lego import GyroSensor, ColorSensor
 import time
 #? Mindent beimportálunk
-
 wheelDiameter = 1
 leftm = LargeMotor("outB")
 rightm = LargeMotor("outC")
@@ -18,64 +17,47 @@ def sign(num):
     if(num == 0):
         return 1
     return(num / abs(num))
-
 def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distance):
     """This function calculates the speed, for linearly speeding up and slowing down."""
-
     deltaDistance = abs(abs(currentDistance) - startDistance)
-
-
     if(deltaDistance < speedUp):
             #* Ha a kezdet óta a fordulatok száma még kisebb annál a cél-fordulat számnál amit megadtunk, akkor tovább gyorsul
             return (deltaDistance / speedUp * (maxSpeed - minSpeed)) + minSpeed
             #~   [              0 és 1 közötti szám           ]   maximum elérhető érték (nem számítjuk a minimum sebességet) + alap sebesség
-
     elif(deltaDistance > distance - slowDown and shouldSlow == True):
         if(motorStop != False):
             minSpeed = motorStop
         #* Ha ez be van kapcsolva, akkor csak egy adott sebességig lassul, és utána bekapcsolva hagyja a motort
         return maxSpeed - ((deltaDistance - (distance - slowDown)) / slowDown * maxSpeed) + minSpeed
         #~               [                        1 és 0 közötti szám                      ]    legalacsonyabb sebessége a minimum érték lehet
-
     else:
         return maxSpeed
-
 def raallSzog(motor, szinSzenzor, minFeny, maxSebesseg, KP):
     sebesseg = (minFeny - szinSzenzor.reflected_light_intensity) * KP
     #& Egyik oldali motor sebességének kiszámolása, egy célérték (minLight) és egy érzékenység (KP) alapján
-
     if(abs(sebesseg) > maxSebesseg):            
         sebesseg = maxSebesseg * (sebesseg / abs(sebesseg))
     #* Semmiképp se legyen az sebesség magasabb a megadott maximum sebességnél
-
     motor.on(sebesseg)
     #* Elindítja a motort a kiszámolt sebességgel
-
     return sebesseg
     #* Visszaadja a sebességet, hogy meg lehesen nézni hogy, 0, és mindkét motornak 0 lett a sebessége, akkor leáll a program.
-
 def raall(KP, maxIdo, maxSebesseg, minimumFeny):
     elozoIdo = time()
     #? Vonalra állás kezdetének időpotját lementi
-
     while True:            
         elteltIdo = time() - elozoIdo
         #* Fordulás óta eltelt idő
-
         if(raallSzog(leftm, leftSensor, minimumFeny, maxSebesseg, KP) == 0 and raallSzog(rightm, rightSensor, minimumFeny, maxSebesseg, KP) == 0):
             m.stop(None, False)
             break
         #* Elindítja a motorokat a funkciókkal és megnézi, hogy mindkettő 0
         #* ha igen akkor leállítja a programot, mert elivleg sikeresen ráállt a vonalra
-
         if(elteltIdo >= maxIdo):
             m.stop(None, False)
             break
-        #*
-
 def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine = False, goOnLine = False, motorStop = False, shouldSlowDown = True, drift = 0, margin = 0, calibrate = False, debug = False):
     """Make the robot go staright in a specified degree (cm)"""
-
     startRotations = getRotations()
     timesGood = 0
     previousAngle = 0
@@ -85,13 +67,10 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
     slowingDown = distance * 0.6
     direction = sign(maxSpeed)
     minSpeed *= direction
-
     if(speedingUp > (2 * wheelDiameter)):
         speedingUp = (2 * wheelDiameter)
     if(slowingDown > (2*wheelDiameter)):
         slowingDown = (2 * wheelDiameter)
-
-
     m.on(minSpeed, minSpeed)
     while abs(getRotations() - startRotations) <= distance:
         if(stopOnLine == True or calibrate != False):
@@ -102,40 +81,23 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
                     #* Ha ponotsan vonalra állás be van kapcsolva akkor elindítja azt az eljárást.
                 m.stop(None, False)
                 break
-             
         calculatedSpeed = calculateSpeed(getRotations(), startRotations, speedingUp, slowingDown, maxSpeed, minSpeed, motorStop, shouldSlowDown, distance)
-
-
         #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
-
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = sign(calculatedSpeed) * abs(maxSpeed)
         #* Ne tudjon véletlenül sem a maximum sebességnél gyorsabban menni
-
         sensitivityMultiplier = (calculatedSpeed / (maxSpeed - minSpeed)) * 2
-
         if(sensitivityMultiplier > 2):
             sensitivityMultiplier = 2
         if(sensitivityMultiplier < 0.5):
             sensitivityMultiplier = 0.5
-
         calculatedSensitivity = sensitivity / sensitivityMultiplier
-        
-
         if(abs(gs.angle - targetAngle) > 0):
             calculatedAngle = ((gs.angle) - targetAngle + drift) * calculatedSensitivity 
             #~     gyro célérték     jelenlegi gyro érték * érzékenység
-
             calculatedAngle *= direction
             #* Ne forduljon meg a robot hátra menésnél
-
             if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
             #* Ne tudjon a maximumnál nagyobb értékkel fordulni
-
-            """if(gs.angle == irany):
-                pontos += 1
-            osszesMeres += 1"""
-            #* Pontosságot számolja
-
             s.on(calculatedAngle, calculatedSpeed)
             #* Elindítja a motort a kiszámolt sebességel és szögben.
             previousAngle = calculatedAngle

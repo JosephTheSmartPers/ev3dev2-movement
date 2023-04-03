@@ -1,122 +1,112 @@
 from math import sin, cos, degrees, atan2, radians
 from time import time, sleep
-from ev3dev2.sensor.lego import * 
-from ev3dev2.sensor import *
-from ev3dev2.motor import LargeMotor, OUTPUT_B, OUTPUT_C, MoveTank, MoveSteering
-
-leftm = LargeMotor(OUTPUT_B)
-rightm = LargeMotor(OUTPUT_C)
-
-m = MoveTank(OUTPUT_B, OUTPUT_C)
-s = MoveSteering(OUTPUT_B, OUTPUT_C)
-
-gs = GyroSensor(INPUT_2)
-
+from ev3dev2.sensor.lego import GyroSensor, ColorSensor
+from ev3dev2.motor import LargeMotor, MoveTank, MoveSteering, MediumMotor
+#? Imports
+leftMotor = LargeMotor("outB")
+rightMotor = LargeMotor("outC")
+#? Individual motors defined
+tankMovement = MoveTank(leftMotor.address, rightMotor.address)
+steeringMovement = MoveSteering(leftMotor.address, rightMotor.address)
+#? Getting the adresses of previously set motors and defining the movements based on those.
+yHand = MediumMotor("outA")
+xHand = MediumMotor("outD")
+#? Defining the Medium Motors operating the vertical motion of the robot, and the extensions
+gyro = GyroSensor("in2")
 rightSensor = ColorSensor("in3")
 leftSensor = ColorSensor("in4")
-
-gyroOffset = 0.99174
-
-def gsAngle():
-    return gs.angle * gyroOffset
-
+#? Defining the sensors of the robot.
+gyroCorrection = 0.99174
+#? The gyroscope of the robot counts 363 degrees in one rotation rather than 360, so we always multiply it by this constant
+gyroOffset = 0
+currentX = 0
+currentY = 0
+#? Settinng the base position of the robot to 0, and the angle also to 0 (0 meaning it is facing the longer side of the table opposite to the launch area)
+def optimizeFloat(num):
+    return round(float(num), 4)
+def sign(num):
+    """Returns the sign of a number, and returns a 1 if the number is 0"""
+    if(num == 0):
+        return 1
+    return(num / abs(num))
 def findBigger(num1, num2):
     """Subtracts the smallest number from all numbers in a vector and returns it."""
     smallest = min(num1, num2)
     num1 -= smallest
     num2 -= smallest
     return [num1, num2]
-
+#* Functions that are only mathematical, and don't have any direct connection to the robot
+def gsAngle():
+    """Returns the angle of the gyroscope, (this also takes into account the offset and the correction of the gyroscope)"""
+    return optimizeFloat((gyro.angle + gyroOffset) * gyroCorrection)
 def getRotations():
     """Returns the current rotation of the two large motors"""
-    return (leftm.rotations + rightm.rotations) / 2 * wheelDiameter
-
-def sign(num):
-    """Returns the sign of a number, and returns a 1 if the number is 0"""
-    if(num == 0):
-        return 1
-    return(num / abs(num))
-
+    return optimizeFloat((leftMotor.rotations + rightMotor.rotations) / 2 * wheelDiameter)
+def setPosition(angle, x, y):
+    """Sets the gyroscope angle and the x and y coordinates of the robot."""
+    global gyroOffset
+    global currentX
+    global currentY
+    gyroOffset = angle
+    currentX = x
+    currentY = y
 def shortest_angle(angle, target_angle):
     # Calculate the absolute difference between the angles
     diff = target_angle - angle
-    
     # Check if the difference is more than 180 degrees
     if abs(diff) > 180:
         # Recalculate the target angle with the shortest path
         target_angle -= 360
         target_angle *= sign(diff) 
-            
     return target_angle
-
-currentX = 0
-currentY = 0
-
-
 def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distance, shouldSpeedUp):
     """This function calculates the speed, for linearly speeding up and slowing down."""
-
     deltaDistance = abs(abs(currentDistance) - startDistance)
     #? Calculates how close the robot is to the target
-
+    returnSpeed = maxSpeed
     if(deltaDistance < speedUp and shouldSpeedUp == True):
             #* Ha a kezdet óta a fordulatok száma még kisebb annál a cél-fordulat számnál amit megadtunk, akkor tovább gyorsul
-            return (deltaDistance / speedUp * (maxSpeed - minSpeed)) + minSpeed
+            returnSpeed = (deltaDistance / speedUp * (maxSpeed - minSpeed)) + minSpeed
             #~   [              0 és 1 közötti szám           ]   maximum elérhető érték (nem számítjuk a minimum sebességet) + alap sebesség
-
     elif(deltaDistance > distance - slowDown and shouldSlow == True):
         if(motorStop != False):
             minSpeed = motorStop
         #* Ha ez be van kapcsolva, akkor csak egy adott sebességig lassul, és utána bekapcsolva hagyja a motort
-        return maxSpeed - ((deltaDistance - (distance - slowDown)) / slowDown * maxSpeed) + minSpeed
+        returnSpeed = maxSpeed - ((deltaDistance - (distance - slowDown)) / slowDown * maxSpeed) + minSpeed
         #~               [                        1 és 0 közötti szám                      ]    legalacsonyabb sebessége a minimum érték lehet
-
-    else:
-        return maxSpeed
-
-def raallSzog(motor, szinSzenzor, minFeny, maxSebesseg, KP):
-    sebesseg = (minFeny - szinSzenzor.reflected_light_intensity) * KP
+    return round(float(returnSpeed), 2)
+#* Functions that don't directly move the robot
+def moveRobotOnLine(motor, szinSzenzor, minFeny, maxSebesseg, KP):
+    returnSpeed = (minFeny - szinSzenzor.reflected_light_intensity) * KP
     #& Egyik oldali motor sebességének kiszámolása, egy célérték (minLight) és egy érzékenység (KP) alapján
-
-    if(abs(sebesseg) > maxSebesseg):            
-        sebesseg = maxSebesseg * (sebesseg / abs(sebesseg))
+    if(abs(returnSpeed) > maxSebesseg):            
+        returnSpeed = maxSebesseg * (returnSpeed / abs(returnSpeed))
     #* Semmiképp se legyen az sebesség magasabb a megadott maximum sebességnél
-
-    motor.on(sebesseg)
+    motor.on(returnSpeed)
     #* Elindítja a motort a kiszámolt sebességgel
-
-    return sebesseg
+    return round(float(returnSpeed), 2)
     #* Visszaadja a sebességet, hogy meg lehesen nézni hogy, 0, és mindkét motornak 0 lett a sebessége, akkor leáll a program.
-
-def raall(KP, maxIdo, maxSebesseg, minimumFeny):
+def goOnLine(KP, maxIdo, maxSebesseg, minimumFeny):
+    """Makes to robot perpendicularly go on a line, works with 2 sensors only."""
     elozoIdo = time()
     #? Vonalra állás kezdetének időpotját lementi
-
     while True:            
         elteltIdo = time() - elozoIdo
         #* Fordulás óta eltelt idő
-
-        if(raallSzog(leftm, leftSensor, minimumFeny, maxSebesseg, KP) == 0 and raallSzog(rightm, rightSensor, minimumFeny, maxSebesseg, KP) == 0):
-            m.stop(None, False)
+        if(moveRobotOnLine(leftMotor, leftSensor, minimumFeny, maxSebesseg, KP) == 0 and moveRobotOnLine(rightMotor, rightSensor, minimumFeny, maxSebesseg, KP) == 0):
+            tankMovement.stop(None, False)
             break
         #* Elindítja a motorokat a funkciókkal és megnézi, hogy mindkettő 0
         #* ha igen akkor leállítja a programot, mert elivleg sikeresen ráállt a vonalra
-
         if(elteltIdo >= maxIdo):
-            m.stop(None, False)
+            tankMovement.stop(None, False)
             break
-        #*
-
-
 def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine = False, goOnLine = False, motorStop = False, shouldSpeedUp = True, shouldSlowDown = True, drift = 0, correctMargin = 0, calibrate = False, speedingUp = False, slowingDown = False, debug = False):
-    #Make the robot go staright in a specified degree (cm)
-
+    """Make the robot go straight in a specified degree (cm)"""
     startRotations = getRotations()
     timesGood = 0
     previousAngle = 0
     timesBad = 0
-    status = "Starting"
-
     if(speedingUp == False):
         speedingUp = distance * 0.5 * (abs(maxSpeed - minSpeed) / 99)
         if(speedingUp > (2 * wheelDiameter)):
@@ -125,213 +115,195 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
         slowingDown = distance * 0.6
         if(slowingDown > (2*wheelDiameter)):
             slowingDown = (2 * wheelDiameter)
-
     direction = sign(maxSpeed)
     minSpeed *= direction
-
-    m.on(minSpeed, minSpeed)
+    tankMovement.on(minSpeed, minSpeed)
     while abs(getRotations() - startRotations) <= distance:
         if(stopOnLine == True or calibrate != False):
              if(leftSensor.reflected_light_intensity <= 8 or rightSensor.reflected_light_intensity <= 8):
                 #* Ha be vonalraállás benne van a paraméterekben, és talál egy vonalat akkor megáll
                 if(goOnLine == True):
-                    raall(1.75, 1.5, 15, 6)
+                    goOnLine(1.75, 1.5, 15, 6)
                     #* Ha ponotsan vonalra állás be van kapcsolva akkor elindítja azt az eljárást.
-                m.stop(None, False)
+                tankMovement.stop(None, False)
                 break
-             
         calculatedSpeed = calculateSpeed(getRotations(), startRotations, speedingUp, slowingDown, maxSpeed, minSpeed, motorStop, shouldSlowDown, distance, shouldSpeedUp = shouldSpeedUp)
-
-        #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
-
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = sign(calculatedSpeed) * abs(maxSpeed)
         #* Ne tudjon véletlenül sem a maximum sebességnél gyorsabban menni
-
         sensitivityMultiplier = (calculatedSpeed / (maxSpeed - minSpeed)) * 2
-
         if(sensitivityMultiplier > 2):
             sensitivityMultiplier = 2
         if(sensitivityMultiplier < 0.5):
             sensitivityMultiplier = 0.5
-
-        calculatedSensitivity = sensitivity / sensitivityMultiplier
-        
-
+        calculatedSensitivity = optimizeFloat(sensitivity / sensitivityMultiplier)
         if(abs(gsAngle() - targetAngle) > 0):
             calculatedAngle = ((gsAngle()) - targetAngle + drift) * calculatedSensitivity 
             #~     gyro célérték     jelenlegi gyro érték * érzékenység
-
             calculatedAngle *= direction
             #* Ne forduljon meg a robot hátra menésnél
-
             if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
             #* Ne tudjon a maximumnál nagyobb értékkel fordulni
-
-            """if(gsAngle() == irany):
-                pontos += 1
-            osszesMeres += 1"""
-            #* Pontosságot számolja
-
-            s.on(calculatedAngle, calculatedSpeed)
+            steeringMovement.on(calculatedAngle, calculatedSpeed)
             #* Elindítja a motort a kiszámolt sebességel és szögben.
             previousAngle = calculatedAngle
             timesBad += 1
             timesGood = 0
         else:
             if(timesBad + correctMargin != timesGood):
-                s.on((-previousAngle * direction), calculatedSpeed)
+                steeringMovement.on((-previousAngle * direction), calculatedSpeed)
             else:
-                s.on((drift * direction), calculatedSpeed)
+                steeringMovement.on((drift * direction), calculatedSpeed)
             timesGood += 1
         if(debug == True):
             print("Current Rotations: " + str(round(getRotations(), 2)) + "\tTarget Rotations: " + str(distance))
-            print(sensitivityMultiplier)
-    newWheelDiameter = (calibrate / ((abs(abs(getRotations()) - abs(startRotations)))/ wheelDiameter))
-    if(motorStop != False):
-        m.on(motorStop, motorStop)
+            print("Sensitivity: " + str(sensitivityMultiplier))
+    newWheelDiameter = optimizeFloat(calibrate / ((abs(abs(getRotations()) - abs(startRotations)))/ wheelDiameter))
+    if(motorStop):
+        tankMovement.on(motorStop, motorStop)
     else:
-        m.stop(None, False)
+        tankMovement.stop(None, False)
     if(calibrate):
-        leftm.reset()
-        rightm.reset()
+        leftMotor.reset()
+        rightMotor.reset()
         return (newWheelDiameter)
-
 def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp =0.3, slowDown = 0.8, debug = False, motorStop = False, shouldSlow = True, shouldSpeed = True, curve = False):
+    """Goes to the specified coordinates (distance from the two sides in cm) using trigonometry"""
     global currentX
     global currentY
     global rotations
     rotations = getRotations()
-
-    distance = (abs(abs(targetX) - abs(currentX))) + abs((abs(targetY) - abs(currentY)))
-
+    distance = (abs(abs(targetX - (margin)) - abs(currentX))) + abs((abs(targetY - (margin)) - abs(currentY)))
     startDistance = distance
     startGsAngle = gsAngle()
-
-    speedUp *= startDistance
-    slowDown *= startDistance
-
+    speedUp *= startDistance 
+    slowDown *= startDistance 
     startX = currentX
     startY = currentY
-
     if(curve == True):
         coordinates = findBigger(abs(targetX - currentX), abs(targetY - currentY))
         curveX = -(coordinates[0] * sign(targetX - currentX))
         curveY = -(coordinates[1] * sign(targetY - currentY))
         curveTargetAngle = -abs(-gsAngle()-((degrees(atan2((targetX - (targetX - curveX)), (targetY - (targetY -curveY))))))) 
-        print("Curve target: " + str(curveTargetAngle))
-
     while abs(abs(targetX) - abs(currentX)) > margin or abs(abs(targetY) - abs(currentY)) > margin:
-        status = "Starting"
-
-        distance = (abs(abs(targetX) - abs(currentX))) + abs((abs(targetY) - abs(currentY)))
-
-        currentX += (sin(radians(gsAngle())) * ((getRotations() - rotations))) * -1
+        distance = (abs(abs(targetX - (margin)) - abs(currentX))) + abs((abs(targetY - (margin)) - abs(currentY)))
+        currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
         currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
         rotations = getRotations()
-
         if(curve == True):
             if(curveY == 0):
                 distanceDecimal = abs(1- abs((targetY - currentY) / (targetY - startY)))
                 print("TargetY: " + str(targetY) + "\tCurrentY: " + str(currentY))
             if(curveX == 0):
                 distanceDecimal = abs(1 - abs((targetX - currentX) / (targetX - startX)))
-                print("TargetX: " + str(targetX) + "\tCurrentX: " + str(currentX))
-                  
-            #distanceDecimal = 1- (abs(abs(abs(abs(targetX) - abs(curveX)) - abs(currentX)) + abs(abs(abs(targetY) - abs(curveY)) - abs(currentY))) / startCurveDistance)
-            print("Decimal: " + str(distanceDecimal))
+                print("TargetX: " + str(targetX) + "\tCurrentX: " + str(currentX)) 
             targetAngle = curveTargetAngle * distanceDecimal
+            targetAngle += startGsAngle
         else:
-            targetAngle = degrees(atan2(targetX - currentX, targetY - currentY))
-
-        targetAngle += startGsAngle
-
-        print("Target angle: " + str(targetAngle))
-
-        
-
+            targetAngle = degrees(atan2(-(targetX - currentX), targetY - currentY))
         targetAngle = shortest_angle(gsAngle(), targetAngle)
-
         calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance, shouldSpeedUp = shouldSpeed)
-
         #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = (abs(calculatedSpeed) / calculatedSpeed) * abs(maxSpeed)
         #* Ne tudjon véletlenül sem a maximum sebességnél gyorsabban menni
-
-        print("Equation: " + str(gsAngle()) + "+" + str(targetAngle))
-
         calculatedAngle = ((gsAngle()) - targetAngle) * sensitvity
-        print("Calculated angle: " + str(calculatedAngle) +" \n")
-
-
         if(debug == True):
             print("----------------------------")
             print("X: "+str(round(currentX, 2)) + "\tY: " + str(round(currentY, 2)))
             print("targetX: "+str(targetX) + "\ttargetY: " + str(targetY))
-            print("Current Angle: " + str(gsAngle()) + "\tTarget Angle: " + str(round(targetAngle, 2)))
-            print("Left speed: " + str(leftm.speed) + "\tRight speed: " + str(rightm.speed))
-            #print("slowDwon: "+str(slowDown) + "\tspeedUp: "+str(speedUp))
-            #print("Predicted Distance: " + str(distance) + "\tStart Distance: " + str(startDistance))
-            #print("Status: " + status)
-            print("Target: " + str(targetAngle) + "\tCalculated: " + str(calculatedAngle) + "\tCurrent: " + str(gsAngle()))
-
-        
-        
-        #~     gyro célérték     jelenlegi gyro érték * érzékenység
-
+            #print("Current Angle: " + str(gsAngle()) + "\tTarget Angle: " + str(round(targetAngle, 2)))
+            #print("Left speed: " + str(leftm.speed) + "\tRight speed: " + str(rightm.speed))
+            print("slowDwon: "+str(slowDown) + "\tspeedUp: "+str(speedUp))
+            print("Predicted Distance: " + str(distance) + "\tStart Distance: " + str(startDistance))
+            #print("Target: " + str(targetAngle) + "\tCalculated: " + str(calculatedAngle) + "\tCurrent: " + str(gsAngle()))
         if(maxSpeed < 0):
-            calculatedAngle = calculatedAngle
+            calculatedAngle = -calculatedAngle
         #* Ne forduljon meg a robot hátra menésnél
-
-        if(abs(calculatedAngle) > 100): calculatedAngle = (abs(calculatedAngle) / calculatedAngle) * 100
-        s.on(calculatedAngle, calculatedSpeed)
+        if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
+        steeringMovement.on(calculatedAngle, calculatedSpeed)
         sleep(0.01)
     if(motorStop == False):
-        m.stop()
+        tankMovement.stop()
     else:
-        m.on(motorStop, motorStop)
-
+        tankMovement.on(motorStop, motorStop)
     print("__________")
     print("D__O__N__E")
     print("__________")
-
-dist = 83
-wheelDiameter = 17.50439367311072
+def fordul(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpeed = 2):
+    angle = angle * -1
+    #? Így megy a jó irányba, gyro meg van fordítva
+    fordulatszam = 0
+    hasStopped = False
+    if(relative == True):
+        fordulatszam = gsAngle()
+    turnConstant = (fordulatszam-angle)
+    stopMargin *= sign(turnConstant)
+    while gsAngle() != fordulatszam - angle:
+        if(turnConstant - stopMargin <= gsAngle() <= turnConstant + stopMargin and hasStopped == False and stopMargin != 0):
+            hasStopped = True
+            tankMovement.stop()
+            print(str(turnConstant - stopMargin) + " | " + str(gsAngle()))
+            continue
+        calculatedSpeed = (turnConstant - gsAngle()) * sensitvity
+        if(calculatedSpeed > maxSpeed / 3.5):
+            calculatedSpeed = maxSpeed
+        if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = (abs(maxSpeed) * sign(calculatedSpeed))
+        if(abs(calculatedSpeed) < minSpeed): calculatedSpeed = (abs(minSpeed) * sign(calculatedSpeed))
+        tankMovement.on(-calculatedSpeed, calculatedSpeed)
+    tankMovement.stop()
+    print("\nDONE\n")
+#* Functions having to do with movement of the robot
 def calibrate():
-    gs.reset()
+    """Runs a short calibration script, that calculates how many cm is one rotation."""
+    gyro.reset()
     global wheelDiameter
     wheelDiameter = 1
     wheelDiameter = straight(10, 35, 0, 1.15, 5, False, False, False, True, True, -1, 0, calibrate=float(dist))
-
     sleep(0.1)
     straight(float(dist) + 2, -50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
-
-
-
     print(wheelDiameter)
+def futas1():
+    print("Wheel diameter: " + str(wheelDiameter))
+    #setPosition(-44, 24, 19)
+    setPosition(-44, 22, 14.25)
+    print(gyroOffset)
+    print("X: " + str(currentX) + "\tY: " + str(currentY))
+    gotoXY(44, 44, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
+    yHand.on_for_rotations(90, 0.4, False, False)
+    xHand.on_for_rotations(90, -1)
+    sleep(0.1)
+    yHand.on_for_rotations(100, 1)
+    sleep(0.1)
+    yHand.on_for_rotations(90, -1)
+    gotoXY(30, 30, -50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
+    #gotoXY(58, 44, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
+    #gotoXY(58 / 2, 44 / 2, -50.00, 5.00, 0.8, 4, 0.30, 0.7, debug=False)
+
+dist = 83
+wheelDiameter = 17.58164165931156
 #calibrate()
-
 wheelDiameter = float(wheelDiameter)
-
-#straight(100, 50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
 rotations = getRotations()
 input("Start? ")
-
-currentX = 40
-currentY = 40
-gs.reset()
-leftm.reset()
-rightm.reset()
+setPosition(0, 40, 40)
+gyro.reset()
+leftMotor.reset()
+rightMotor.reset()
+try:
+    futas1()   
+    print("meow")
+except KeyboardInterrupt:
+    tankMovement.stop()
+    tankMovement.reset()
+    print("Exited the program")
+exit("this wont even work")
 try:
     gotoXY(120, 90, 50.00, 5.00, 0.8, 4, 0.30, 0.7, curve=True, debug=False, motorStop=50)
     gotoXY(150, 55, 50.00, 5.00, 1, 4, 0.30, 0.7, curve=True, debug=False, shouldSpeed= False, motorStop=50)
     gotoXY(37.5, 40.5, 50.00, 5.00, 0.8, 2, 0.30, 0.7, curve=True, debug=False, shouldSpeed= False)
     bestSong = "https://youtube.com/shorts/MS2ZXbbZp3o?feature=share"
-    #gotoXY(40, 40, 20, 5.00, 0.8, 1.5, 0.30, 0.7, True)
-
 except KeyboardInterrupt:
-    m.stop()
-    m.reset()
+    tankMovement.stop()
+    tankMovement.reset()
     print("Exited the program")
-m.stop()
-m.reset()
-    
+tankMovement.stop()
+tankMovement.reset()

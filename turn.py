@@ -139,7 +139,7 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
         rightm.reset()
         return (newWheelDiameter)
     #* Ha így bekapcsolva marad a 
-def fordul2(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2):
+def fordul2(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpeed = 2):
     angle = angle * -1
     #? Így megy a jó irányba, gyro meg van fordítva
     fordulatszam = 0
@@ -158,6 +158,7 @@ def fordul2(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2):
         if(calculatedSpeed > maxSpeed / 3.5):
             calculatedSpeed = maxSpeed
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = (abs(maxSpeed) * sign(calculatedSpeed))
+        if(abs(calculatedSpeed) < minSpeed): calculatedSpeed = (abs(minSpeed) * sign(calculatedSpeed))
         m.on(-calculatedSpeed, calculatedSpeed)
         
     m.stop()
@@ -165,13 +166,13 @@ def fordul2(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2):
 drift = -2
 gs.reset()
 straight(1, 35, 0, 1.2, 5, False, False, False, True, True, -2, 0)
-fordul2(90, 70, 0.3, False, 12)
+fordul2(90, 70, 0.38, False, 8, 7)
 #fordul(90, 80, 0.3, 0.5, hibahatar=2, idotullepes=3, relativ=False, stopAfter=50, waitMargin=1, debug=False, minSpeed=3)
 print(gs.angle)
-fordul2(-90, 70, 0.5, False, 8)
+fordul2(-90, 70, 0.58, False, 6, 7)
 #fordul(-90, 80, 0.55, 0.5, idotullepes=3, relativ=False, stopAfter=10, waitMargin=1, debug=False, minSpeed=3)
 print(gs.angle)
-fordul2(1, 70, 0.3, False, 14)
+fordul2(1, 70, 0.38, False, 10, 7)
 #fordul(1, 80, 0.3, 0.5, idotullepes=2, relativ=False, stopAfter=45, waitMargin=1, debug=False, minSpeed=3)
 print(gs.angle)
 straight(1, -35, 0, 1.2, 5, False, False, False, True, True, -2, 0)
