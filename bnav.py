@@ -1,4 +1,4 @@
-from math import sin, cos, degrees, atan2, radians
+from math import sin, cos, degrees, atan2, radians, sqrt
 from time import time, sleep
 from ev3dev2.sensor.lego import GyroSensor, ColorSensor
 from ev3dev2.motor import LargeMotor, MoveTank, MoveSteering, MediumMotor
@@ -9,8 +9,8 @@ rightMotor = LargeMotor("outC")
 tankMovement = MoveTank(leftMotor.address, rightMotor.address)
 steeringMovement = MoveSteering(leftMotor.address, rightMotor.address)
 #? Getting the adresses of previously set motors and defining the movements based on those.
-yHand = MediumMotor("outA")
-xHand = MediumMotor("outD")
+"""yHand = MediumMotor("outA")
+xHand = MediumMotor("outD")"""
 #? Defining the Medium Motors operating the vertical motion of the robot, and the extensions
 gyro = GyroSensor("in2")
 rightSensor = ColorSensor("in3")
@@ -22,6 +22,49 @@ gyroOffset = 0
 currentX = 0
 currentY = 0
 #? Settinng the base position of the robot to 0, and the angle also to 0 (0 meaning it is facing the longer side of the table opposite to the launch area)
+class Vector:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+def distance(x1, y1, x2, y2):
+    return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2))
+def getPointOnBezier(controllPoints, t):
+    n = len(controllPoints) -1
+    x = 0
+    y = 0
+    for i in range(0, n):
+        bi = bernstein(n, i, t)
+        x += controllPoints[i].x * bi
+        y += controllPoints[i].y * bi
+    return Vector(x, y)
+def bernstein(n, i, t):
+    if(i<0 or i > n): return 0
+    if(n == 0 and i == 0): return 1
+
+    binomial = factorial(n) / (factorial(i) * factorial(n -1))
+    t1 = pow(1 -t, n - i)
+    t2 = pow(t, i)
+    return binomial * t1 * t2
+def factorial(n):
+    if(n <= 1): return 1
+    
+    result = 1
+    for i in range(2, n):
+        result *= i
+    return result
+def bezierLenght(controlPoints, n = 100):
+        totalLength = 0
+        t = 0
+        dt = 1 / n
+        point = controlPoints[0]
+        
+        for i in range(0, n):
+            nextPoint = getPointOnBezier(controlPoints, t + dt)
+            totalLength += distance(point.x, point.y, nextPoint.x, nextPoint.y)
+            point = nextPoint
+            t += dt
+        return totalLength
+
 def optimizeFloat(num):
     return round(float(num), 4)
 def sign(num):
@@ -184,6 +227,7 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
         curveX = -(coordinates[0] * sign(targetX - currentX))
         curveY = -(coordinates[1] * sign(targetY - currentY))
         curveTargetAngle = -abs(-gsAngle()-((degrees(atan2((targetX - (targetX - curveX)), (targetY - (targetY -curveY))))))) 
+        print(curveTargetAngle)
     while abs(abs(targetX) - abs(currentX)) > margin or abs(abs(targetY) - abs(currentY)) > margin:
         distance = (abs(abs(targetX - (margin)) - abs(currentX))) + abs((abs(targetY - (margin)) - abs(currentY)))
         currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
@@ -251,6 +295,52 @@ def fordul(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpee
         tankMovement.on(-calculatedSpeed, calculatedSpeed)
     tankMovement.stop()
     print("\nDONE\n")
+def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3, slowDown = 0.8, motorStop=False, shouldSpeed= True, shouldSlow = True):
+    targetX = controllPoints[len(controllPoints)-1].x
+    targetY = controllPoints[len(controllPoints)-1].y
+    global currentX
+    global currentY
+    global rotations
+    rotations = getRotations()
+    startRotations = rotations
+    startGsAngle = gsAngle()
+    startX = currentX
+    startY = currentY
+    distance = bezierLenght(controllPoints, 100)
+    startDistance = distance
+    print(distance)
+    speedUp *= startDistance 
+    slowDown *= startDistance
+
+    previousPoint = getPointOnBezier(controllPoints, 0)
+    
+    while abs(abs(targetX) - abs(currentX)) > margin or abs(abs(targetY) - abs(currentY)) > margin:
+        distance = getRotations() - startRotations
+        distanceDecimal = (distance / startDistance)
+        print("Decimal: " + str(distanceDecimal))
+        currentPoint = getPointOnBezier(controllPoints, distanceDecimal)
+        currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
+        currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
+        rotations = getRotations()
+        targetAngle = -degrees(atan2(currentPoint.y - previousPoint.x, currentPoint.x - previousPoint.x))
+        targetAngle = shortest_angle(gsAngle(), targetAngle)
+        print("Target angle: " + str(targetAngle))
+        calculatedAngle = ((gsAngle()) - targetAngle) * sensitvity
+        print("Calculated angle: " + str(calculatedAngle))
+        calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance, shouldSpeedUp = shouldSpeed)
+        if(sign(maxSpeed) != sign(calculatedAngle)):
+            calculatedAngle = -calculatedAngle
+        #* Ne forduljon meg a robot hátra menésnél
+        if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
+        steeringMovement.on(calculatedAngle, calculatedSpeed)
+        previousPoint = currentPoint
+        sleep(0.01)
+    if(motorStop == False):
+        tankMovement.stop()
+    else:
+        tankMovement.on(motorStop, motorStop)
+
+
 #* Functions having to do with movement of the robot
 def calibrate():
     """Runs a short calibration script, that calculates how many cm is one rotation."""
@@ -288,16 +378,22 @@ setPosition(0, 40, 40)
 gyro.reset()
 leftMotor.reset()
 rightMotor.reset()
-try:
+"""try:
     futas1()   
     print("meow")
 except KeyboardInterrupt:
     tankMovement.stop()
     tankMovement.reset()
     print("Exited the program")
-exit("this wont even work")
+exit("this wont even work")"""
 try:
-    gotoXY(120, 90, 50.00, 5.00, 0.8, 4, 0.30, 0.7, curve=True, debug=False, motorStop=50)
+    bezier([Vector(0, 0), Vector(25, 25), Vector(75, 25), Vector(75, 100)], 10, 70, 1, 4)
+except KeyboardInterrupt:
+    tankMovement.stop()
+    tankMovement.reset()
+exit("meow")
+try:
+    gotoXY(120, 80, 50.00, 5.00, 1, 4, 0.30, 0.7, curve=True, debug=False, motorStop=50)
     gotoXY(150, 55, 50.00, 5.00, 1, 4, 0.30, 0.7, curve=True, debug=False, shouldSpeed= False, motorStop=50)
     gotoXY(37.5, 40.5, 50.00, 5.00, 0.8, 2, 0.30, 0.7, curve=True, debug=False, shouldSpeed= False)
     bestSong = "https://youtube.com/shorts/MS2ZXbbZp3o?feature=share"
