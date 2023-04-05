@@ -27,12 +27,12 @@ class Vector:
         self.x = x
         self.y = y
 def distance(x1, y1, x2, y2):
-    return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2))
+    return sqrt((x2 - x1) **2 + (y2 - y1) ** 2)
 def getPointOnBezier(controllPoints, t):
     n = len(controllPoints) -1
     x = 0
     y = 0
-    for i in range(0, n):
+    for i in range(n + 1):
         bi = bernstein(n, i, t)
         x += controllPoints[i].x * bi
         y += controllPoints[i].y * bi
@@ -49,7 +49,7 @@ def factorial(n):
     if(n <= 1): return 1
     
     result = 1
-    for i in range(2, n):
+    for i in range(2, n + 1):
         result *= i
     return result
 def bezierLenght(controlPoints, n = 100):
@@ -57,14 +57,15 @@ def bezierLenght(controlPoints, n = 100):
         t = 0
         dt = 1 / n
         point = controlPoints[0]
+        previousPoint = getPointOnBezier(controlPoints, 0)
         
         for i in range(0, n):
-            nextPoint = getPointOnBezier(controlPoints, t + dt)
-            totalLength += distance(point.x, point.y, nextPoint.x, nextPoint.y)
-            point = nextPoint
+            point = getPointOnBezier(controlPoints, t)
+            totalLength += distance(previousPoint.x, previousPoint.y, point.x, point.y)
+            print(degrees(atan2(point.y - previousPoint.y, point.x - previousPoint.x)))
             t += dt
+            previousPoint = point
         return totalLength
-
 def optimizeFloat(num):
     return round(float(num), 4)
 def sign(num):
@@ -313,6 +314,7 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
     slowDown *= startDistance
 
     previousPoint = getPointOnBezier(controllPoints, 0)
+    previousDecimal = -1
     
     while abs(abs(targetX) - abs(currentX)) > margin or abs(abs(targetY) - abs(currentY)) > margin:
         distance = getRotations() - startRotations
@@ -322,11 +324,15 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
         currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
         currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
         rotations = getRotations()
-        targetAngle = -degrees(atan2(currentPoint.y - previousPoint.x, currentPoint.x - previousPoint.x))
-        targetAngle = shortest_angle(gsAngle(), targetAngle)
+        if(previousDecimal < distanceDecimal):
+            targetAngle = -degrees(atan2(currentPoint.y - previousPoint.y, currentPoint.x - previousPoint.x))
+            targetAngle -= gsAngle()
+            targetAngle *= -sign(targetAngle)
+        #targetAngle = shortest_angle(gsAngle(), targetAngle)
         print("Target angle: " + str(targetAngle))
         calculatedAngle = ((gsAngle()) - targetAngle) * sensitvity
         print("Calculated angle: " + str(calculatedAngle))
+        print("___")
         calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance, shouldSpeedUp = shouldSpeed)
         if(sign(maxSpeed) != sign(calculatedAngle)):
             calculatedAngle = -calculatedAngle
@@ -334,6 +340,7 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
         if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
         steeringMovement.on(calculatedAngle, calculatedSpeed)
         previousPoint = currentPoint
+        previousDecimal = distanceDecimal
         sleep(0.01)
     if(motorStop == False):
         tankMovement.stop()
@@ -386,8 +393,11 @@ except KeyboardInterrupt:
     tankMovement.reset()
     print("Exited the program")
 exit("this wont even work")"""
+#controlPoints = [Vector(75, 25), Vector(25, 25), Vector(0, 0)]
+#setPosition(0, 75, 25)
+controlPoints = [Vector(0, 0), Vector(25, 25), Vector(75, 25)]
 try:
-    bezier([Vector(0, 0), Vector(25, 25), Vector(75, 25), Vector(75, 100)], 10, 70, 1, 4)
+    bezier(controlPoints, 10, 70, 0.5, 4)
 except KeyboardInterrupt:
     tankMovement.stop()
     tankMovement.reset()
