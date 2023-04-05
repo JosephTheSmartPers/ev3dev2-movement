@@ -1,4 +1,4 @@
-from math import sin, cos, degrees, atan2, radians, sqrt
+from math import sin, cos, degrees, atan2, radians, sqrt, fmod
 from time import time, sleep
 from ev3dev2.sensor.lego import GyroSensor, ColorSensor
 from ev3dev2.motor import LargeMotor, MoveTank, MoveSteering, MediumMotor
@@ -9,8 +9,8 @@ rightMotor = LargeMotor("outC")
 tankMovement = MoveTank(leftMotor.address, rightMotor.address)
 steeringMovement = MoveSteering(leftMotor.address, rightMotor.address)
 #? Getting the adresses of previously set motors and defining the movements based on those.
-"""yHand = MediumMotor("outA")
-xHand = MediumMotor("outD")"""
+yHand = MediumMotor("outA")
+xHand = MediumMotor("outD")
 #? Defining the Medium Motors operating the vertical motion of the robot, and the extensions
 gyro = GyroSensor("in2")
 rightSensor = ColorSensor("in3")
@@ -38,10 +38,12 @@ def getPointOnBezier(controllPoints, t):
         y += controllPoints[i].y * bi
     return Vector(x, y)
 def bernstein(n, i, t):
-    if(i<0 or i > n): return 0
-    if(n == 0 and i == 0): return 1
+    if i < 0 or i > n:
+        return 0
+    if n == 0 and i == 0:
+        return 1
 
-    binomial = factorial(n) / (factorial(i) * factorial(n -1))
+    binomial = factorial(n) / (factorial(i) * factorial(n - i))
     t1 = pow(1 -t, n - i)
     t2 = pow(t, i)
     return binomial * t1 * t2
@@ -53,6 +55,19 @@ def factorial(n):
         result *= i
     return result
 def bezierLenght(controlPoints, n = 100):
+        totalLength = 0
+        t = 0
+        dt = 1 / n
+        point = controlPoints[0]
+        previousPoint = getPointOnBezier(controlPoints, 0)
+        
+        for i in range(0, n):
+            point = getPointOnBezier(controlPoints, t)
+            totalLength += distance(previousPoint.x, previousPoint.y, point.x, point.y)
+            print(degrees(atan2(point.y - previousPoint.y, point.x - previousPoint.x)))
+            t += dt
+            previousPoint = point
+        return totalLength
         totalLength = 0
         t = 0
         dt = 1 / n
@@ -82,7 +97,7 @@ def findBigger(num1, num2):
 #* Functions that are only mathematical, and don't have any direct connection to the robot
 def gsAngle():
     """Returns the angle of the gyroscope, (this also takes into account the offset and the correction of the gyroscope)"""
-    return optimizeFloat((gyro.angle + gyroOffset) * gyroCorrection)
+    return fmod(optimizeFloat((gyro.angle + gyroOffset) * gyroCorrection), 360)
 def getRotations():
     """Returns the current rotation of the two large motors"""
     return optimizeFloat((leftMotor.rotations + rightMotor.rotations) / 2 * wheelDiameter)
@@ -223,6 +238,7 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
     slowDown *= startDistance 
     startX = currentX
     startY = currentY
+    if(maxSpeed < 0): minSpeed *= -1
     if(curve == True):
         coordinates = findBigger(abs(targetX - currentX), abs(targetY - currentY))
         curveX = -(coordinates[0] * sign(targetX - currentX))
@@ -245,7 +261,9 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
             targetAngle += startGsAngle
         else:
             targetAngle = degrees(atan2(-(targetX - currentX), targetY - currentY))
-        targetAngle = shortest_angle(gsAngle(), targetAngle)
+        #targetAngle = shortest_angle(gsAngle(), targetAngle)
+        if(maxSpeed < 0):
+            targetAngle = ( targetAngle - 180)
         calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance, shouldSpeedUp = shouldSpeed)
         #* Ha nem gyorsul vagy lassul akkor maximum sebességel menjen
         if(abs(calculatedSpeed) > abs(maxSpeed)): calculatedSpeed = (abs(calculatedSpeed) / calculatedSpeed) * abs(maxSpeed)
@@ -259,13 +277,16 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
             #print("Left speed: " + str(leftm.speed) + "\tRight speed: " + str(rightm.speed))
             print("slowDwon: "+str(slowDown) + "\tspeedUp: "+str(speedUp))
             print("Predicted Distance: " + str(distance) + "\tStart Distance: " + str(startDistance))
-            #print("Target: " + str(targetAngle) + "\tCalculated: " + str(calculatedAngle) + "\tCurrent: " + str(gsAngle()))
-        if(maxSpeed < 0):
-            calculatedAngle = -calculatedAngle
+            print("Target: " + str(targetAngle) + "\tCalculated: " + str(calculatedAngle) + "\tCurrent: " + str(gsAngle()))
+
+        calculatedAngle = fmod(calculatedAngle, 360)
+        calculatedAngle /= 3.6
         #* Ne forduljon meg a robot hátra menésnél
+
         if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
         steeringMovement.on(calculatedAngle, calculatedSpeed)
         sleep(0.01)
+
     if(motorStop == False):
         tankMovement.stop()
     else:
@@ -315,19 +336,26 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
 
     previousPoint = getPointOnBezier(controllPoints, 0)
     previousDecimal = -1
+    distanceDecimal = 0
     
     while abs(abs(targetX) - abs(currentX)) > margin or abs(abs(targetY) - abs(currentY)) > margin:
         distance = getRotations() - startRotations
         distanceDecimal = (distance / startDistance)
+        if(distanceDecimal > 1):
+            break
         print("Decimal: " + str(distanceDecimal))
+        
         currentPoint = getPointOnBezier(controllPoints, distanceDecimal)
         currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
         currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
+        print("TargetX: " + str(targetX) + "\tCurrentX: " + str(currentX))
+        print("TargetY: " + str(targetY) + "\tCurrentY: " + str(currentY))
         rotations = getRotations()
         if(previousDecimal < distanceDecimal):
             targetAngle = -degrees(atan2(currentPoint.y - previousPoint.y, currentPoint.x - previousPoint.x))
-            targetAngle -= gsAngle()
-            targetAngle *= -sign(targetAngle)
+            targetAngle -= startGsAngle
+            targetAngle *= -1
+            
         #targetAngle = shortest_angle(gsAngle(), targetAngle)
         print("Target angle: " + str(targetAngle))
         calculatedAngle = ((gsAngle()) - targetAngle) * sensitvity
@@ -338,7 +366,7 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
             calculatedAngle = -calculatedAngle
         #* Ne forduljon meg a robot hátra menésnél
         if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
-        steeringMovement.on(calculatedAngle, calculatedSpeed)
+        steeringMovement.on((calculatedAngle / 3.6), calculatedSpeed)
         previousPoint = currentPoint
         previousDecimal = distanceDecimal
         sleep(0.01)
@@ -346,8 +374,6 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
         tankMovement.stop()
     else:
         tankMovement.on(motorStop, motorStop)
-
-
 #* Functions having to do with movement of the robot
 def calibrate():
     """Runs a short calibration script, that calculates how many cm is one rotation."""
@@ -361,24 +387,24 @@ def calibrate():
 def futas1():
     print("Wheel diameter: " + str(wheelDiameter))
     #setPosition(-44, 24, 19)
-    setPosition(-44, 22, 14.25)
+    setPosition(-44, 24, 18.25)
     print(gyroOffset)
     print("X: " + str(currentX) + "\tY: " + str(currentY))
-    gotoXY(44, 44, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
+    gotoXY(38, 40, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
     yHand.on_for_rotations(90, 0.4, False, False)
     xHand.on_for_rotations(90, -1)
     sleep(0.1)
     yHand.on_for_rotations(100, 1)
     sleep(0.1)
     yHand.on_for_rotations(90, -1)
-    gotoXY(30, 30, -50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
+    gotoXY(35, 25, -50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
     #gotoXY(58, 44, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
     #gotoXY(58 / 2, 44 / 2, -50.00, 5.00, 0.8, 4, 0.30, 0.7, debug=False)
 
 dist = 83
-wheelDiameter = 17.58164165931156
+wheelDiameter = 17.4026
 #calibrate()
-wheelDiameter = float(wheelDiameter)
+wheelDiameter = optimizeFloat(wheelDiameter)
 rotations = getRotations()
 input("Start? ")
 setPosition(0, 40, 40)
@@ -386,16 +412,26 @@ gyro.reset()
 leftMotor.reset()
 rightMotor.reset()
 """try:
+    setPosition(0, 0, 0)
+    gotoXY(0, 40, 50.00, 5.00, 1, 4, 0.30, 0.7, curve=False, debug=True)
+    gotoXY(0, 0, -50.00, 5.00, 1, 4, 0.30, 0.7, curve=False, debug=True)
+except KeyboardInterrupt:
+    tankMovement.stop()
+    tankMovement.reset()
+exit("this wont even work")"""
+try:
     futas1()   
     print("meow")
 except KeyboardInterrupt:
     tankMovement.stop()
     tankMovement.reset()
     print("Exited the program")
-exit("this wont even work")"""
-#controlPoints = [Vector(75, 25), Vector(25, 25), Vector(0, 0)]
-#setPosition(0, 75, 25)
+exit("this wont even work")
+
 controlPoints = [Vector(0, 0), Vector(25, 25), Vector(75, 25)]
+setPosition(0, 0, 0)
+controlPoints = [Vector(75, 25), Vector(25, 25), Vector(0, 0)]
+setPosition(0, 75, 25)
 try:
     bezier(controlPoints, 10, 70, 0.5, 4)
 except KeyboardInterrupt:

@@ -16,10 +16,12 @@ def getPointOnBezier(controllPoints, t):
         y += controllPoints[i].y * bi
     return Vector(x, y)
 def bernstein(n, i, t):
-    if(i<0 or i > n): return 0
-    if(n == 0 and i == 0): return 1
+    if i < 0 or i > n:
+        return 0
+    if n == 0 and i == 0:
+        return 1
 
-    binomial = factorial(n) / (factorial(i) * factorial(n -1))
+    binomial = factorial(n) / (factorial(i) * factorial(n - i))
     t1 = pow(1 -t, n - i)
     t2 = pow(t, i)
     return binomial * t1 * t2
@@ -49,9 +51,9 @@ controlPoints = [Vector(75, 25), Vector(25, 25), Vector(0,0)]
 
 
 previousPoint = getPointOnBezier(controlPoints, 0)
-#bezierLenght(controlPoints)
-for i in range(0, 100):
+print(bezierLenght(controlPoints))
+"""for i in range(0, 100):
     currentPoint = getPointOnBezier(controlPoints,(i/100))
     print(degrees(atan2(currentPoint.y - previousPoint.y, currentPoint.x - previousPoint.x)))
-    previousPoint = currentPoint
+    previousPoint = currentPoint"""
     
