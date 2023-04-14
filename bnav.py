@@ -21,7 +21,7 @@ gyroCorrection = 0.99174
 gyroOffset = 0
 currentX = 0
 currentY = 0
-wheelDiameter = 17.401
+wheelDiameter = 17.5198
 #? Settinng the base position of the robot to 0, and the angle also to 0 (0 meaning it is facing the longer side of the table opposite to the launch area)
 class Vector:
     def __init__(self, x, y):
@@ -65,20 +65,7 @@ def bezierLenght(controlPoints, n = 100):
         for i in range(0, n):
             point = getPointOnBezier(controlPoints, t)
             totalLength += distance(previousPoint.x, previousPoint.y, point.x, point.y)
-            print(degrees(atan2(point.y - previousPoint.y, point.x - previousPoint.x)))
-            t += dt
-            previousPoint = point
-        return totalLength
-        totalLength = 0
-        t = 0
-        dt = 1 / n
-        point = controlPoints[0]
-        previousPoint = getPointOnBezier(controlPoints, 0)
-        
-        for i in range(0, n):
-            point = getPointOnBezier(controlPoints, t)
-            totalLength += distance(previousPoint.x, previousPoint.y, point.x, point.y)
-            print(degrees(atan2(point.y - previousPoint.y, point.x - previousPoint.x)))
+            #print(degrees(atan2(point.y - previousPoint.y, point.x - previousPoint.x)))
             t += dt
             previousPoint = point
         return totalLength
@@ -124,16 +111,18 @@ def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, 
     deltaDistance = abs(abs(currentDistance) - startDistance)
     #? Calculates how close the robot is to the target
     returnSpeed = maxSpeed
+    
     if(deltaDistance < speedUp and shouldSpeedUp == True):
-            #* Ha a kezdet óta a fordulatok száma még kisebb annál a cél-fordulat számnál amit megadtunk, akkor tovább gyorsul
-            returnSpeed = (deltaDistance / speedUp * (maxSpeed - minSpeed)) + minSpeed
-            #~   [              0 és 1 közötti szám           ]   maximum elérhető érték (nem számítjuk a minimum sebességet) + alap sebesség
+        #* Ha a kezdet óta a fordulatok száma még kisebb annál a cél-fordulat számnál amit megadtunk, akkor tovább gyorsul
+        returnSpeed = (deltaDistance / speedUp * (maxSpeed - minSpeed)) + minSpeed
+        #~   [              0 és 1 közötti szám           ]   maximum elérhető érték (nem számítjuk a minimum sebességet) + alap sebesség
     elif(deltaDistance > distance - slowDown and shouldSlow == True):
         if(motorStop != False):
             minSpeed = motorStop
         #* Ha ez be van kapcsolva, akkor csak egy adott sebességig lassul, és utána bekapcsolva hagyja a motort
         returnSpeed = maxSpeed - ((deltaDistance - (distance - slowDown)) / slowDown * maxSpeed) + minSpeed
         #~               [                        1 és 0 közötti szám                      ]    legalacsonyabb sebessége a minimum érték lehet
+    if(abs(returnSpeed) > 100): returnSpeed = sign(returnSpeed) * 100
     return round(float(returnSpeed), 2)
 #* Functions that don't directly move the robot
 def moveRobotOnLine(motor, szinSzenzor, minFeny, maxSebesseg, KP):
@@ -163,6 +152,10 @@ def goOnLine(KP, maxIdo, maxSebesseg, minimumFeny):
             break
 def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine = False, goOnLine = False, motorStop = False, shouldSpeedUp = True, shouldSlowDown = True, drift = 0, correctMargin = 0, calibrate = False, speedingUp = False, slowingDown = False, debug = False):
     """Make the robot go straight in a specified degree (cm)"""
+    if(shouldSpeedUp == True):
+        tankMovement.on(minSpeed, minSpeed)
+    else:
+        tankMovement.on(maxSpeed, maxSpeed)
     global currentX
     global currentY
     global rotations
@@ -180,7 +173,6 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
             slowingDown = (2 * wheelDiameter)
     direction = sign(maxSpeed)
     minSpeed *= direction
-    tankMovement.on(minSpeed, minSpeed)
     while abs(getRotations() - startRotations) <= distance:
         if(calibrate == False):
             currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
@@ -224,7 +216,8 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
         if(debug == True):
             print("Current Rotations: " + str(round(getRotations(), 2)) + "\tTarget Rotations: " + str(distance))
             print("Sensitivity: " + str(sensitivityMultiplier))
-    newWheelDiameter = optimizeFloat(calibrate / ((abs(abs(getRotations()) - abs(startRotations)))/ wheelDiameter))
+    if(calibrate):
+        newWheelDiameter = optimizeFloat(calibrate / ((abs(abs(getRotations()) - abs(startRotations)))/ wheelDiameter))
     if(motorStop):
         tankMovement.on(motorStop, motorStop)
     else:
@@ -303,7 +296,7 @@ def gotoXY(targetX, targetY, maxSpeed, minSpeed, sensitvity, margin = 4, speedUp
     print("__________")
     print("D__O__N__E")
     print("__________")
-def fordul(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpeed = 2):
+def turn(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpeed = 2, timeout = 2):
     angle = angle * -1
     #? Így megy a jó irányba, gyro meg van fordítva
     fordulatszam = 0
@@ -312,10 +305,9 @@ def fordul(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpee
         fordulatszam = gsAngle()
     turnConstant = (fordulatszam-angle)
     stopMargin *= sign(turnConstant)
+    startTime = time()
     while gsAngle() != fordulatszam - angle:
-        currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
-        currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
-        rotations = getRotations()
+        if(time() - startTime > timeout): break
         if(turnConstant - stopMargin <= gsAngle() <= turnConstant + stopMargin and hasStopped == False and stopMargin != 0):
             hasStopped = True
             tankMovement.stop()
@@ -342,9 +334,7 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
     startY = currentY
     distance = bezierLenght(controllPoints, 100)
     startDistance = distance
-    print(distance)
-    speedUp *= startDistance 
-    slowDown *= startDistance
+    #print(distance)
 
     previousPoint = getPointOnBezier(controllPoints, 0)
     previousDecimal = -1
@@ -373,7 +363,7 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
         calculatedAngle = ((gsAngle()) - targetAngle) * sensitvity
         #print("Calculated angle: " + str(calculatedAngle))
         #print("___")
-        calculatedSpeed = calculateSpeed(distance, startDistance, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, startDistance, shouldSpeedUp = shouldSpeed)
+        calculatedSpeed = calculateSpeed(distanceDecimal, 0, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distanceDecimal, shouldSpeedUp = shouldSpeed)
         if(sign(maxSpeed) == sign(calculatedAngle)):
             calculatedAngle = -calculatedAngle
         #* Ne forduljon meg a robot hátra menésnél
@@ -397,41 +387,58 @@ def calibrate():
     straight(float(dist) + 2, -50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
     print(wheelDiameter)
 def futas1():
-    print("Wheel diameter: " + str(wheelDiameter))
-    #setPosition(-44, 24, 19)
     setPosition(-44, 24, 18.25)
-    print(gyroOffset)
-    print("X: " + str(currentX) + "\tY: " + str(currentY))
-    #gotoXY(38, 40, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
-    straight(32, 50, -37, 0.6, 5, False, False, False, True, True, -1, 0)
+    straight(30, 50, -41, 0.95, 5, False, False, False, True, True, 0, 0)
     yHand.on_for_rotations(80, 0.2)
-    xHand.on_for_rotations(80, -0.55)
+    xHand.on_for_rotations(80, -0.45)
     yHand.on_for_rotations(80, 0.6, block=False)
     straight(6, 20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
-    xHand.on_for_rotations(80, -0.65, block=False)
+    
     yHand.on_for_rotations(80, 1)
     straight(0.8, -20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
+    xHand.on_for_rotations(80, -0.65, block=False)
     yHand.on_for_rotations(90, -2.22, block=False)
-    
     straight(25, -40, -40, 1.1, 5, False, False, False, True, True, 0, 0)
+    tankMovement.on_for_rotations(40,40,0.2)
     xHand.on_for_rotations(15, 1, block=False)
-    yHand.on_for_rotations(10, 1.5, block=False)
-    print(currentX)
-    print(currentY)
-    print(gsAngle())
-    bezier(controllPoints=[Vector(50, 36),Vector(60, 36),Vector(61, 70)],minSpeed=10,maxSpeed=70,sensitvity=0.8,speedUp=0.3,slowDown=0.8)
-    #gotoXY(-42, 60, 50.00, 5.00, 1, 4, 0.30, 0.7, curve=True, debug=False, motorStop=50)
-    xHand.on_for_rotations(-10, 1.5, block=False)
-    straight(20, 50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
-    #gotoXY(35, 25, -50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
-    #gotoXY(58, 44, 50.00, 6, 0.7, 5, 0.30, 0.7, debug=True)
-    #gotoXY(58 / 2, 44 / 2, -50.00, 5.00, 0.8, 4, 0.30, 0.7, debug=False)
+    yHand.on_for_rotations(10, 2, block=False)
+    bezier(controllPoints=[Vector(50, 36),Vector(61, 35),Vector(64, 65)],minSpeed=10,maxSpeed=40,sensitvity=0.98,speedUp=0.3,slowDown=0.8, motorStop=40)
+    xHand.on_for_rotations(-80, 1, block=False)
+    straight(38, 40, 10, 1.1, 5, False, False, False, False, True, 0, 0, slowingDown=0.1)
+    tankMovement.on_for_rotations(-20, -20, 0.05)
+    yHand.on_for_rotations(-80, 2.5, block=False)
+    sleep(0.2)
+    gyro.reset()
+    setPosition(0, 180, 97)
+    sleep(0.2)
+    straight(distance=13,maxSpeed=-20,targetAngle=0,sensitivity=0.8,minSpeed=5,speedingUp=0.5,slowingDown=0.3)
+    xHand.on_for_rotations(70, 0.55)
+    raiseSpeed = 70
+    raiseHeight = 0.6
+    yHand.reset()
+    yHand.on_for_rotations(raiseSpeed, 1.2, block=True)
+    sleep(0.1)
+    yHand.on_for_rotations(-raiseSpeed, raiseHeight, block=True)
+    sleep(0.01)
+    for _ in range(0,2):
+        yHand.on_for_rotations(raiseSpeed, raiseHeight, block=True)
+        sleep(0.01)
+        yHand.on_for_rotations(-raiseSpeed, raiseHeight, block=True)
+        sleep(0.01)
+    yHand.on_for_rotations(raiseSpeed, -(1.1), block=True)
+    xHand.on_for_rotations(-10, 0.5, False, False)
+    turn(-80, 70, 0.38, False, 10, 2, 1)
+    straight(distance=5,maxSpeed=20,targetAngle=-80,sensitivity=0.8,minSpeed=5,speedingUp=0.5,slowingDown=0.3)
+    turn(-90, 70, 0.38, False, 10, 3, 1)
+    straight(distance=20,maxSpeed=-100,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    straight(distance=5,maxSpeed=50,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    turn(45, 70, 0.38, False, 10, 3, 1)
+    straight(distance=-40,maxSpeed=50,targetAngle=0,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
 rotations = getRotations()
 dist = 83
-wheelDiameter = 17.6543
-calibrate()
+wheelDiameter = 17.5043
+#calibrate()
 wheelDiameter = optimizeFloat(wheelDiameter)
-
 input("Start? ")
 setPosition(0, 40, 40)
 gyro.reset()
@@ -463,7 +470,6 @@ yHand.stop()
 xHand.reset()
 yHand.reset()
 exit("this wont even work")
-
 controlPoints = [Vector(0, 0), Vector(25, 25), Vector(75, 25)]
 setPosition(0, 0, 0)
 controlPoints = [Vector(75, 25), Vector(25, 25), Vector(0, 0)]
