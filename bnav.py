@@ -123,6 +123,7 @@ def calculateSpeed(currentDistance, startDistance, speedUp, slowDown, maxSpeed, 
         returnSpeed = maxSpeed - ((deltaDistance - (distance - slowDown)) / slowDown * maxSpeed) + minSpeed
         #~               [                        1 és 0 közötti szám                      ]    legalacsonyabb sebessége a minimum érték lehet
     if(abs(returnSpeed) > 100): returnSpeed = sign(returnSpeed) * 100
+    
     return round(float(returnSpeed), 2)
 #* Functions that don't directly move the robot
 def moveRobotOnLine(motor, szinSzenzor, minFeny, maxSebesseg, KP):
@@ -200,6 +201,7 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
             #~     gyro célérték     jelenlegi gyro érték * érzékenység
             calculatedAngle *= direction
             #* Ne forduljon meg a robot hátra menésnél
+            calculatedAngle /= 3.6
             if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
             #* Ne tudjon a maximumnál nagyobb értékkel fordulni
             steeringMovement.on(calculatedAngle, calculatedSpeed)
@@ -330,8 +332,6 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
     rotations = getRotations()
     startRotations = rotations
     startGsAngle = gsAngle()
-    startX = currentX
-    startY = currentY
     distance = bezierLenght(controllPoints, 100)
     startDistance = distance
     #print(distance)
@@ -355,8 +355,9 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
         rotations = getRotations()
         if(previousDecimal < distanceDecimal):
             targetAngle = -degrees(atan2(currentPoint.y - previousPoint.y, currentPoint.x - previousPoint.x))
-            targetAngle -= startGsAngle
+            targetAngle -= 2*startGsAngle
             targetAngle *= -1
+        print(distanceDecimal)
             
         targetAngle = shortest_angle(gsAngle(), targetAngle)
         #print("Target angle: " + str(targetAngle))
@@ -364,7 +365,7 @@ def bezier(controllPoints, minSpeed, maxSpeed, sensitvity, margin=4, speedUp=0.3
         #print("Calculated angle: " + str(calculatedAngle))
         #print("___")
         calculatedSpeed = calculateSpeed(distanceDecimal, 0, speedUp, slowDown, maxSpeed, minSpeed, motorStop, shouldSlow, distanceDecimal, shouldSpeedUp = shouldSpeed)
-        if(sign(maxSpeed) == sign(calculatedAngle)):
+        if(sign(maxSpeed) == -1):
             calculatedAngle = -calculatedAngle
         #* Ne forduljon meg a robot hátra menésnél
         if(abs(calculatedAngle) > 100): calculatedAngle = sign(calculatedAngle) * 100
@@ -382,29 +383,29 @@ def calibrate():
     gyro.reset()
     global wheelDiameter
     wheelDiameter = 1
-    wheelDiameter = straight(10, 35, 0, 1.15, 5, False, False, False, True, True, -1, 0, calibrate=float(dist))
+    wheelDiameter = straight(10, 35, 0, 1.15, 5, False, False, False, True, True, 0, 0, calibrate=float(dist))
     sleep(0.1)
     straight(float(dist) + 2, -50, 0, 1.1, 5, False, False, False, True, True, 0, 0)
     print(wheelDiameter)
 def futas1():
     setPosition(-44, 24, 18.25)
-    straight(30, 50, -41, 0.95, 5, False, False, False, True, True, 0, 0)
+    straight(30, 40, -40, 0.95, 5, False, False, False, True, True, 0, 0)
     yHand.on_for_rotations(80, 0.2)
     xHand.on_for_rotations(80, -0.45)
     yHand.on_for_rotations(80, 0.6, block=False)
-    straight(6, 20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
-    
+    straight(4.5, 20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
     yHand.on_for_rotations(80, 1)
     straight(0.8, -20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
-    xHand.on_for_rotations(80, -0.65, block=False)
+    xHand.on_for_rotations(45, -0.65, block=False)
     yHand.on_for_rotations(90, -2.22, block=False)
     straight(25, -40, -40, 1.1, 5, False, False, False, True, True, 0, 0)
     tankMovement.on_for_rotations(40,40,0.2)
-    xHand.on_for_rotations(15, 1, block=False)
-    yHand.on_for_rotations(10, 2, block=False)
-    bezier(controllPoints=[Vector(50, 36),Vector(61, 35),Vector(64, 65)],minSpeed=10,maxSpeed=40,sensitvity=0.98,speedUp=0.3,slowDown=0.8, motorStop=40)
-    xHand.on_for_rotations(-80, 1, block=False)
-    straight(38, 40, 10, 1.1, 5, False, False, False, False, True, 0, 0, slowingDown=0.1)
+    xHand.on_for_rotations(15, 0.7, block=False)
+    yHand.on_for_rotations(10, 2.5, block=False)
+    bezier(controllPoints=[Vector(50, 36),Vector(61, 35),Vector(60, 64)],minSpeed=10,maxSpeed=40,sensitvity=0.98,speedUp=0.3,slowDown=0.8, motorStop=40)
+    xHand.on_for_rotations(-100, 1, block=False)
+    straight(20, 40, 5, 1.2, 7, False, False, 35, False, True, 0, 0, slowingDown=0.1)
+    steeringMovement.on_for_rotations(3, 35, 0.8)
     tankMovement.on_for_rotations(-20, -20, 0.05)
     yHand.on_for_rotations(-80, 2.5, block=False)
     sleep(0.2)
@@ -427,16 +428,55 @@ def futas1():
         sleep(0.01)
     yHand.on_for_rotations(raiseSpeed, -(1.1), block=True)
     xHand.on_for_rotations(-10, 0.5, False, False)
-    turn(-80, 70, 0.38, False, 10, 2, 1)
-    straight(distance=5,maxSpeed=20,targetAngle=-80,sensitivity=0.8,minSpeed=5,speedingUp=0.5,slowingDown=0.3)
-    turn(-90, 70, 0.38, False, 10, 3, 1)
-    straight(distance=20,maxSpeed=-100,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
-    straight(distance=5,maxSpeed=50,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
-    turn(45, 70, 0.38, False, 10, 3, 1)
-    straight(distance=-40,maxSpeed=50,targetAngle=0,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    turn(-85, 70, 0.38, False, 10, 2, 1)
+    straight(distance=3.8,maxSpeed=20,targetAngle=-85,sensitivity=0.8,minSpeed=5,speedingUp=0.5,slowingDown=0.3)
+    turn(-88, 70, 0.38, False, 10, 3, 1)
+    straight(distance=20,maxSpeed=-70,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    straight(distance=8,maxSpeed=20,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    turn(-45, 70, 0.38, False, 10, 3, 1)
+    straight(distance=50,maxSpeed=-70,targetAngle=-25,sensitivity=0.8,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    
+def futas2():
+    yHand.on_for_rotations(30, 1.2, True, False)
+    setPosition(-29, 33.5, 19.5)
+    straight(90, 70, -30, 4, 5)
+    turn(-90, 30, 0.45, relative=False)
+    straight(10, 40, -90, 5, 25, motorStop=30)
+    turn(-102, 30, 0.45, relative=False)
+    yHand.on_for_rotations(-90, 1.2, True, False)
+    straight(5, 40, -102, 5, 25, motorStop=30)
+    straight(10, 30, -102, 6.5, 25, shouldSpeedUp=False)
+    tankMovement.on_for_rotations(-30, -30, 0.15)
+    yHand.on_for_rotations(100, 3, True, True)
+    turn(-180, 30, 0.5, relative=False)
+    tankMovement.on_for_rotations(-30, -30, 0.8)
+    gyro.reset()
+    setPosition(180, 106, 112)
+    sleep(0.2)
+    straight(2, 10, 180, 1, 25)
+    straight(23, 50, 234, 2, 25, motorStop=20)
+    straight(21, 30, 198, 10, 25, shouldSpeedUp=False)
+    straight(13, -30, int(gsAngle())+75, 3.6, 20)
+    yHand.on_for_rotations(-20, 3, True, False)
+    turn(207, 30, 0.6, False, 2, 1)
+    straight(20, 15, 215, 6, 10, True, False)
+    straight(7, 20, 215, 6, 1)
+    turn(178, 50, 0.6, False, 2, 0.4)
+    straight(20, 30, 178, 5, 1)
+    straight(2, -30, 180, 5, 1)
+    xHand.on_for_rotations(40, 2, True, True)
+    straight(7.8, -30, 180, 5, 1)
+    turn(270, 60, 0.55, False, 2, 0.8)
+    straight(40, 100, 255, 5, 6, slowingDown=0.05, motorStop=100)
+    straight(40, 100, 270, 5, 6, slowingDown=0.05, speedingUp=0.95, motorStop=100, shouldSpeedUp=False)
+def futas3():
+    setPosition(0, 200, 18)
+    straight(38, 70, 0, 1.2, 20, motorLe=25)
+    straight(14, 25, 0, 0.8, 15, shouldSpeedUp=False)
+    straight(17.6, -60, 0, 1.2, 20)
 rotations = getRotations()
 dist = 83
-wheelDiameter = 17.5043
+wheelDiameter = 17.6232
 #calibrate()
 wheelDiameter = optimizeFloat(wheelDiameter)
 input("Start? ")
@@ -453,7 +493,7 @@ except KeyboardInterrupt:
     tankMovement.reset()
 exit("this wont even work")"""
 try:
-    futas1()   
+    futas2()   
     print("meow")
 except KeyboardInterrupt:
     tankMovement.stop()
