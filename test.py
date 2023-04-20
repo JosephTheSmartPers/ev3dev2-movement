@@ -1,3 +1,4 @@
-from ev3dev2.motor import LargeMotor, MoveTank
+from ev3dev2.motor import LargeMotor, MoveTank, MediumMotor
 #? Imports
-MoveTank("outC", "outB").on(50, 50)
+MediumMotor("A").on_for_rotations(-100, 2)
+MediumMotor("A").on_for_rotations(100, 2)
