@@ -12,7 +12,14 @@ from ev3dev2.power import PowerSupply
 from ev3dev2.console import Console
 from ev3dev2.button import Button
 from os import system
+from ev3dev2.led import Leds
+from ev3dev2.sound import Sound
 #? Imports
+speaker = Sound()
+console = Console()
+console.set_font(font='Lat15-Terminus32x16', reset_console=False)
+button = Button()
+leds = Leds()
 battery = PowerSupply()
 #? Defining the sensors of the robot.
 gyroCorrection = 0.99174
@@ -23,13 +30,11 @@ currentY = 0
 rotationsText = open("rotations.txt", "r+")
 wheelDiameter = float(rotationsText.readline())
 rotationsText.close()
+wheelDiameter = 17.5
 #? Settinng the base position of the robot to 0, and the angle also to 0 (0 meaning it is facing the longer side of the table opposite to the launch area)
 system("chmod +x loadCtrlC.sh")
 system("sh ../miau/loadCtrlC.sh")
 #? Remapping the "up" key to the ctrl-c key combination
-console = Console()
-console.set_font(font='Lat15-Terminus32x16', reset_console=False)
-button = Button()
 #? Inicializálja a gombokat, a konzolt, a girót, és a hangszoórót
 class port:
     def __init__(self, id, type):
@@ -38,32 +43,7 @@ class port:
 ports = [port("in2", "GyroSensor"), port("in3", "ColorSensor"), port("in4", "ColorSensor"), port("outA", "MediumMotor"), port("outD", "MediumMotor"), port("outB", "LargeMotor"), port("outC", "LargeMotor")]
 badPorts = []
 console.set_font(font='Lat15-Fixed15.psf.gz', reset_console=False)
-for aPort in ports:
-    sleep(0.05)
-    try:
-        eval(aPort.type + "('"+aPort.id+"')")
-    except:
-        print("|X| " + aPort.type + " " + aPort.id)
-        sleep(0.2)
-        badPorts.append(aPort)
-    else:
-        print("|✓| " + aPort.type + " " + aPort.id,)
-if(len(badPorts) != 0):
-    print("Connect all ports!")
-    for badPort in badPorts:
-        print(aPort.type + " " + aPort.id + " |x|")
-while len(badPorts) != 0:
-    sleep(0.05)
-    for badPort in badPorts:
-        try:
-            eval(badPort.type + "('"+badPort.id+"')")
-
-        except:
-            pass
-        else:
-            print(aPort.type + " " + aPort.id + " connected")
-            badPorts.remove(badPort)
-            sleep(0.2)
+leds.animate_flash('GREEN', sleeptime=0.75, duration=20, block=False)
 print("Press enter to skip.")
 button.wait_for_bump("enter", 3000)
 console.set_font(font='Lat15-Terminus32x16', reset_console=True)
@@ -82,6 +62,7 @@ rightSensor = ColorSensor("in3")
 leftSensor = ColorSensor("in4")
 gs = GyroSensor("in2")
 gs.mode = GyroSensor.MODE_GYRO_ANG
+gs.calibrate()
 class Vector:
     def __init__(self, x, y):
         self.x = -x
@@ -197,8 +178,16 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
             currentX -= sin(radians(gsAngle())) * ((getRotations() - rotations))
             currentY += cos(radians(gsAngle())) * ((getRotations() - rotations))
             rotations = getRotations()
-        if(stopOnLine == True or calibrate != False):
+        if(stopOnLine == True):
              if(leftSensor.reflected_light_intensity <= 8 or rightSensor.reflected_light_intensity <= 8):
+                #* Ha be vonalraállás benne van a paraméterekben, és talál egy vonalat akkor megáll
+                if(goOnLine == True):
+                    goOnLine(1.75, 1.5, 15, 6)
+                    #* Ha ponotsan vonalra állás be van kapcsolva akkor elindítja azt az eljárást.
+                tankMovement.stop(None, False)
+                break
+        if(calibrate):
+             if(leftSensor.reflected_light_intensity <= 92 or rightSensor.reflected_light_intensity <= 92):
                 #* Ha be vonalraállás benne van a paraméterekben, és talál egy vonalat akkor megáll
                 if(goOnLine == True):
                     goOnLine(1.75, 1.5, 15, 6)
@@ -224,15 +213,6 @@ def straight(distance, maxSpeed, targetAngle, sensitivity, minSpeed, stopOnLine 
             #* Ne tudjon a maximumnál nagyobb értékkel fordulni
             steeringMovement.on(calculatedAngle, calculatedSpeed)
             #* Elindítja a motort a kiszámolt sebességel és szögben.
-        """else:
-            if(timesBad + correctMargin != timesGood):
-                steeringMovement.on((-previousAngle * direction), calculatedSpeed)
-            else:
-                steeringMovement.on((drift * direction), calculatedSpeed)
-            timesGood += 1
-        if(debug == True):
-            print("Current Rotations: " + str(round(getRotations(), 2)) + "\tTarget Rotations: " + str(distance))
-            print("Sensitivity: " + str(sensitivityMultiplier))"""
     if(calibrate):
         newWheelDiameter = optimizeFloat(calibrate / ((abs(abs(getRotations()) - abs(startRotations)))/ wheelDiameter))
     if(motorStop):
@@ -268,7 +248,7 @@ def turn(angle, maxSpeed, sensitvity, relative = True, stopMargin = 2, minSpeed 
 #* Functions having to do with movement of the robot
 def calibrate():
     """Runs a short calibration script, that calculates how many cm is one rotation."""
-    dist = 83
+    dist = 16
     gyro.calibrate()
     global wheelDiameter
     wheelDiameter = 1
@@ -278,174 +258,37 @@ def calibrate():
     rotationsText = open("rotations.txt", "w+")
     rotationsText.write(str(wheelDiameter))
     rotationsText.close()
-def run1():
+def run1(height):
     yHand.on_for_rotations(-100, 1, False, True)
     yHand.reset()
-    setPosition(-44, 24, 18.25)
-    yHand.on_for_rotations(80, 0.7, block=False)
-    straight(29.5, 80, -39.7, 4.8, 3.2, False, False, False, True, True, 0, 0)
-    yHand.on_for_rotations(-100, 0.5)
-    xHand.on_for_rotations(70, -0.55)
-    yHand.on_for_rotations(100, 0.6, block=False)
-    straight(4.9, 20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
-    xHand.on_for_rotations(100, -0.65, block=False)
-    yHand.on_for_rotations(100, 1)
-    straight(0.8, -20, -42, 1.1, 5, False, False, False, True, True, 0, 0)
-    yHand.on_for_rotations(90, -2.22, block=False)
-    straight(26, -70, -40, 4, 5, False, False, False, True, True, 0, 0)
-    straight(2.5, 40, -40, 4, 40)
-    xHand.on_for_rotations(15, 0.7, block=False)
-    yHand.on_for_rotations(30, 2.5, block=False)
-    straight(17, 55, -20, 3.5, 4, motorStop=30)
-    xHand.on_for_rotations(-80, 1, block=False)
-    straight(35, 70, 5.5, 5, 30, motorStop=70)
-    steeringMovement.on_for_rotations(0, 30, 0.3)
-    tankMovement.on_for_rotations(-20, -20, 0.01)
-    yHand.on_for_rotations(-100, 1.5, block=True)
-    yHand.on_for_rotations(-100, 1, block=False)
-    straight(distance=16.5,maxSpeed=-50,targetAngle=5,sensitivity=5,minSpeed=4,speedingUp=0.3,slowingDown=False)
-    xHand.on_for_rotations(100, 1.4)
-    raiseSpeed = 100
-    raiseHeight = 0.85
-    yHand.reset()
-    yHand.on_for_rotations(100, 0.3)
-    for _ in range(0,4):
-        yHand.reset()
-        yHand.on_for_rotations(raiseSpeed, raiseHeight)
-        sleep(0.08)
-        yHand.reset()
-        yHand.on_for_rotations(-raiseSpeed, raiseHeight, block=True)
-    xHand.on_for_rotations(-60, 0.5, False, False)
-    turn(-85, 70, 0.5, False, 10, 2, 0.5)
-    xHand.on_for_rotations(100, 0.5, False, False)
-    straight(distance=9,maxSpeed=40,targetAngle=-87,sensitivity=0.8,minSpeed=5,speedingUp=0.5,slowingDown=0.3)
-    turn(-85, 70, 0.4, False, 10, 1, 1)
-    straight(distance=23,maxSpeed=-55,targetAngle=-85,sensitivity=7,minSpeed=30,speedingUp=0.5)
-    xHand.on_for_rotations(-100, 0.5, False, False)
-    straight(distance=12,maxSpeed=40,targetAngle=-90,sensitivity=0.8,minSpeed=5,speedingUp=0.5)
-    straight(distance=15,maxSpeed=-75,targetAngle=-90,sensitivity=4,minSpeed=30,speedingUp=0.5)
-    straight(distance=13,maxSpeed=75,targetAngle=-90,sensitivity=5,minSpeed=10,speedingUp=0.5)
-    turn(8, 40, 0.3, False, 10, 2, 1)
-    xHand.on_for_rotations(100, 0.25, False, False)
-    straight(distance=75,maxSpeed=-70,targetAngle=-30,sensitivity=2,minSpeed=5,speedingUp=0.5, shouldSlowDown=False)
+    yHand.on_for_rotations(70, height, True)
+    straight(87, 70, 0, 3.5, 5, drift=-1, speedingUp=0.1)
+    xHand.on_for_rotations(100, 0.2)
+    xHand.on_for_rotations(-100, 0.2, block = False)
+    #straight(95, -100, 0, 3.5, 25, shouldSlowDown=False, shouldSpeedUp=False)
+    yHand.on_for_rotations(-100, height, True)
 def run2():
     yHand.on_for_rotations(-100, 1, False, True)
     yHand.reset()
     yHand.on_for_rotations(30, 1.2, True, False)
     setPosition(-29, 33.5, 19.5)
-    #27.5
-    straight(90, 70, -26.5, 4.5, 20, drift=2)
-    turn(-90, 30, 0.45, relative=False, timeout=0.6)
-    straight(10, 40, -90, 4.5, 25, motorStop=30)
-    turn(-98, 30, 0.45, relative=False, timeout=0.6)
-    yHand.on_for_rotations(-45, 1.2, True, False)
-    straight(5, 40, -98, 5, 25)
-    straight(8, 30, -98, 6.5, 25, shouldSpeedUp=False)
-    straight(0.22, -10, -90, 4, 5)
-    turn(-78, 15, 0.6, relative=False, timeout=0.6)
-    yHand.on_for_rotations(100, 0.8, True, False)
-    turn(-180, 20, 0.55, relative=False, timeout=1.4)
-    straight(18, -70, -180, 4, 30, motorStop=-70, timeout=2)
-    sleep(0.1)
-    gyro.reset()
-    setPosition(180, 106, 112)
-    sleep(0.15)
-    straight(7.5, 40, 180, 1, 25)
-    straight(18.7, 50, 231.5, 5, 25, motorStop=33)
-    yHand.on_for_rotations(60, 1.4, True, False)
-    straight(25, 33, 185, 10, 3, shouldSpeedUp=False)
-    straight(13, -30, 310.5, 3.6, 20)
-    yHand.on_for_rotations(-70, 2.2, True, False)
-    turn(207, 30, 0.6, False, 2, 2, 0.6)
-    straight(20, 15, 210, 8, 6, True, False, shouldSlowDown=False, shouldSpeedUp=False)
-    straight(4.9, 20, 260, 6, 8, shouldSlowDown=False, shouldSpeedUp=False)
-    turn(178, 60, 0.6, False, 2, 2, 0.45)
-    straight(22, 30, 178, 10, 10, slowingDown=0.5, motorStop=0)
-    straight(0.12, -10, 178, 9, 1)
-    xHand.on_for_rotations(40, 1.2, True, True)
-    straight(13.5, -100, 180, 5, 20)
-    turn(245, 50, 0.55, False, 2, 2, 0.4)
-    straight(23, 100, 250, 5, 30, slowingDown=0.05, motorStop=100)
-    straight(70, 100, 279, 5, 10, slowingDown=0.05, speedingUp=0.95, shouldSpeedUp=False)
+    
 def run3():
     yHand.reset()
     setPosition(0, 200, 18)
-    straight(37, 70, 0, 3.5, 20, motorStop=20)
-    straight(10, 30, 0, 3.5, 15, shouldSpeedUp=False)
-    straight(16, -60, 0, 1.2, 20)
-    turn(34, 60, 0.4, False, 2, 5, 0.8)
-    xHand.on_for_rotations(-100, 3, block=False)
-    straight(25, 60, 32.5, 3.5, 20, motorStop=35)
-    xHand.on_for_rotations(100, 0.15, block=False)
-    straight(3.35, 40, 62, 7.2, 10, shouldSpeedUp=False, motorStop=40)
-    straight(30, 80, 54, 8, 10, shouldSpeedUp=False, motorStop=40)
-    straight(20.5, 34.5, 46, 8, 2, shouldSpeedUp=False)
-    xHand.on_for_rotations(35, 0.75)
-    xHand.on_for_rotations(35, 2.25, block=False)
-    straight(2, -60, 44, 6, 10)
-    yHand.on_for_rotations(100, 2, block=False)
-    straight(13.7, -80, 44, 6, 10,shouldSpeedUp=False) 
-    xHand.on_for_rotations(100, 0.5, block=False)
-    sleep(0.05)
-    yHand.on_for_rotations(-100, 2, block=False)
-    turn(-42, 60, 0.42, False, 2, 4, 0.85)
-    straight(16, 80, -42, 6, 10, motorStop=80)
-    tankMovement.on_for_rotations(80, 80, 1.5)
-    xHand.on_for_rotations(-100, 2, block=False)
-    for _ in range(0,3):
-        straight(1, -100, -42, 0, 10, motorStop=-100)
-        xHand.on_for_rotations(-100, 0.8, block=False)
-        straight(1.2, -100, -42, 0, 10, shouldSpeedUp=False)
-        sleep(0.2)
-        xHand.on_for_rotations(100, 0.8, block=False)
-        straight(20, 80, -42, 4, 10, shouldSlowDown=False)
-        sleep(0.3)
-    xHand.on_for_rotations(100, 1.5, block=False)
-    straight(34, -70, -49.5, 4, 10, motorStop=0)
-    straight(1, 20, -49.5, 4, 10)
-    turn(125, 60, 0.4, False, 2, 4, 1)
-    xHand.on_for_rotations(-100, 1, block=True)
-    xHand.on_for_rotations(-100, 2, block=False)
-    straight(0.8, 25, 130, 4, 10)
-    yHand.on_for_rotations(100, 1.5, block=False)
-    xHand.on_for_rotations(100, 1.5)
-    xHand.on_for_rotations(100, 1.5, block=False)
-    straight(14, -40, 180, 0.25, 10)
-    yHand.on_for_rotations(-100, 1.5, block=False)
-    turn(208, 60, 0.25, False, 2, 4, 0.7)
-    straight(70, 100, 230, 4, 10, shouldSpeedUp=False)
-    yHand.reset()
-    xHand.on_for_rotations(10, 0.01, brake=True)
+    
 def run4():
     yHand.on_for_rotations(50, 0.85, brake=True)
     xHand.on_for_rotations(10, 0.01, brake=True)
     setPosition(80, 200, 3)
-    straight(77.3, 65, 74, 3, 5, motorStop=35)
-    straight(30, 65, 37, 5.5, 5, shouldSpeedUp=False, motorStop=20)
-    tankMovement.on_for_rotations(20, 20, 0.2, brake=True)
-    turn(42, 60, 0.6, False, 2, 4, 0.3)
-    tankMovement.on_for_rotations(10, 10, 0.2, brake=False)
-    xHand.on_for_rotations(-50, 1.8)
-    yHand.on_for_rotations(100, 0.1)
-    straight(2, -80, 42, 3, 6, shouldSpeedUp=False)
-    straight(1, -80, 42, 0, 6, shouldSpeedUp=False)
-    yHand.on_for_rotations(100, 0.9, block=True)
-    yHand.on_for_rotations(100, 1.2, block=False)
-    tankMovement.on_for_rotations(0, -80, 0.95)
-    straight(75, -100, -70, 10, 5, shouldSpeedUp=False, shouldSlowDown=False)
-    yHand.on_for_rotations(100, -3, block=False)
+    
 def run5():
+
     setPosition(-30, 24, 12)
     straight(35.3, 80, -30, 3, 5, motorStop=55)
-    xHand.on_for_rotations(40, 0.1, block=False)
-    yHand.on_for_rotations(60, 0.4, block=False)
-    straight(50, 80, 1.5, 6, 5, shouldSpeedUp=False)
-    xHand.on_for_rotations(50, 10, block=False)
-    tankMovement.on_for_rotations(-100, -100, 0.065)
 currentRun = "Run1"
-#? Ez az a futás ami éppen ki van választva, ami alapból az egyes.
-futas2Ujra = 0
-futas5Ujra = 0
+currentHeight = 0
+heights = [0, 2.3]
 #? Ennél a 2 futásnál még az előtte lévő futásban felemeli a kart, ezért ha újra kell indítani akkor rosz helyen lehett,
 #?  emiatt azt számoljuk és hogyha már nem elsőre indítjuk el, akkor előtte a 0-hoz képest felemeli annyira a kart amennyire kéne
 yHand.on_for_rotations(75, 0.75)
@@ -464,29 +307,28 @@ def up(state):
         else:
             writeRun("Run1")      
 def right(state):
+    global currentHeight
     if state:
         return
     else:
-        if(currentRun == "Run1"):
-            writeRun("Run2")
+        if(currentHeight != 1):
+            currentHeight += 1
         else:
-            writeRun("Run1") 
+            currentHeight = 0
 def down(state):
     if state:
         return
     else: 
-        if(currentRun == "Run3"):
-            writeRun("Run4")
-        else:
-            writeRun("Run3")  
+        pass
 def left(state):
+    global currentHeight
     if state:
         return
     else:
-        if(currentRun == "Run5"):
-            writeRun("Calibrate")
+        if(currentHeight != 0):
+            currentHeight -= 1
         else:
-            writeRun("Run5")
+            currentHeight = 1
 def enter(state):
     if state:
         return
@@ -509,20 +351,19 @@ def writeGyro():
     console.text_at("   " +"G: %03d" % (angle) + leftside, column=2, row=1, reset_console=True, inverse=True)
     #? Kiírja a giroszkóp fordulatszámát, hogy látszódjon, hogyha "mászik"
 def writeRun(futas):
-    console.text_at(futas, column=2, row=3, reset_console=False, inverse=True)
+    console.text_at(currentHeight, column=2, row=3, reset_console=False, inverse=True)
     global currentRun
     currentRun = futas
 #? Kiirja a jelenlegi futást, hogy látszódjon melyik van kiválasztva
 running = False
 def startRun():
+    global currentHeight
     try:
         global running
         if(running == True):
             return
         running = True
         global currentRun
-        global futas5Ujra
-        global futas2Ujra
         if(currentRun == "none" or currentRun == None):
             return
         #* Megnézi, hogy valóban ki van e választva valami
@@ -530,41 +371,16 @@ def startRun():
         tankMovement.stop()
         sleep(0.1)
         #* Lenullázza a giroszkópot, hogy abszolútértékesen is lehessen számolni, és ne kelljen minden function elején megcsinálni
-        if currentRun == "Calibrate":
-            gyro.calibrate()
-        if currentRun == "Run1":
-            run1()
-            xHand.stop()
-            xHand.reset()
-            futas5Ujra = 0
-            futas2Ujra = 0
-        if currentRun == "Run2":
-            run2() 
-            xHand.stop()
-            xHand.reset()
-        if currentRun == "Run3":
-            run3()
-            xHand.stop()
-            xHand.reset()
-        if currentRun == "Run4":
-            run4()
-
-        if currentRun == "Run5":
-            run5()
-            yHand.reset()
-            xHand.reset()
+        #speaker.play_file('run.wav', play_type=speaker.PLAY_NO_WAIT_FOR_COMPLETE)
+        run1(heights[currentHeight])
+        
         tankMovement.reset()
         tankMovement.stop()
         #* Ezek maguk a futások, és hogyha megnyomod a fölső gombot, akkor megszakítja mindegyiket, ezt "Key Remapping" segítségével érjük el
-        if(currentRun.replace("Run", "").isdigit() and currentRun.replace("Run", "") != "5"):
-            currentRun = "Run" + str((int(currentRun.replace("Run", "")) + 1))
-        elif(currentRun.replace("Run", "") == "5"):
-            currentRun="Run5"
-        else:
-            currentRun = "Run1"
         #* Ha egy futás van kiválasztva, akkor a következő futást választja ki ami számrendben utána jön automatikusan
         running = False
         writeGyro()
+        #speaker.play_file('build.wav', play_type=speaker.PLAY_NO_WAIT_FOR_COMPLETE)
     except:
         tankMovement.stop()
         tankMovement.reset()
@@ -572,51 +388,18 @@ def startRun():
         rightMotor.reset()
         running = False
         button.wait_for_released("up", 2000)
-        #speaker.play_tone(frequency=2500, duration=0.50)
+        speaker.play_tone(frequency=2500, duration=0.50)
+        #speaker.play_file('build.wav', play_type=speaker.PLAY_NO_WAIT_FOR_COMPLETE)
         #* Ha a fölső gombot valaki megnyomja akkor megáll a robot.
 previousGyro = 0
 previousRun = "none"
 rotations = getRotations()
 tooLowColor = False
-
-while True: 
-    try:
-        if(leftSensor.reflected_light_intensity < 2 or rightSensor.reflected_light_intensity < 2):
-            tooLowColor = True
-            print("ColorSensor value too low!")
-            sleep(0.1)
-            continue
-        if(tooLowColor):
-            sleep(1)
-        print("Calibrating rotations...")
-        try:
-            calibrate()
-        except ZeroDivisionError:
-            continue
-    except KeyboardInterrupt:
-        tankMovement.stop()
-        tankMovement.reset()
-        print("V: " + str(battery.measured_volts) + "\nD: " + str(wheelDiameter) + "\nPress enter to retry")
-        if(button.wait_for_bump("enter", 2000)):
-            continue
-        else:
-            rotationsText = open("rotations.txt", "r+")
-            wheelDiameter = float(rotationsText.readline())
-            rotationsText.close()
-    else:
-        rotationsText = open("rotations.txt", "w+")
-        rotationsText.write(str(wheelDiameter))
-        rotationsText.close()
-    try:
-        print("V: " + str(battery.measured_volts) + "\nD: " + str(wheelDiameter)+"\nPress down to skip")
-        button.wait_for_bump("down", 5000)
-    except KeyboardInterrupt:
-        continue
-    tankMovement.stop()
-    tankMovement.reset()
-    break
-
+leds.animate_stop()
 #? Plays a tone to let the operators know everything is loaded
+leds.animate_stop()
+leds.all_off()
+#speaker.play_file('build.wav', play_type=speaker.PLAY_WAIT_FOR_COMPLETE)
 while True:
     try: 
         button.process()
@@ -625,7 +408,7 @@ while True:
             #* Hogyha változott a giroszkóp értéke, vagy változott a kiírt futás, akkor ábrázolja
             writeGyro()
             if(currentRun and currentRun != "none"):
-                console.text_at("R: " + currentRun, column=2, row=3, reset_console=False, inverse=True)
+                console.text_at("H: " + str(currentHeight), column=2, row=3, reset_console=False, inverse=True)
             previousGyro = gs.angle
             previousRun = currentRun
     except KeyboardInterrupt or ValueError:
@@ -635,6 +418,7 @@ while True:
         rightMotor.reset()
         running = False
         button.wait_for_released("up", 2000)
+        speaker.play_tone(frequency=2500, duration=0.50)
+        #speaker.play_file('build.wav', play_type=speaker.PLAY_NO_WAIT_OR_COMPLETE)
         continue
-        #speaker.play_tone(frequency=2500, duration=0.50)
         #* Ha a fölső gombot valaki megnyomja akkor megáll a robot.

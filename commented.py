@@ -8,6 +8,7 @@ from math import sin, cos, degrees, atan2, radians, sqrt, fmod
 from time import time, sleep
 from ev3dev2.sensor.lego import GyroSensor, ColorSensor
 from ev3dev2.motor import LargeMotor, MoveTank, MoveSteering, MediumMotor
+from ev3dev2.sound import Sound
 #? Imports
 leftMotor = LargeMotor("outB")
 rightMotor = LargeMotor("outC")
@@ -59,7 +60,6 @@ def bernstein(n, i, t):
 
     print(binomial * t1 * t2)
     return binomial * t1 * t2
-
 def factorial(n):
     """#* Returns the factorial of a number"""
     if(n <= 1): return 1
